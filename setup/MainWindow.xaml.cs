@@ -613,7 +613,7 @@ namespace ReShade.Setup
 			}
 			else
 			{
-				description = "You may now close this setup tool or click this button to edit additional settings.";
+				description = "You may set some settings by clicking here again, or you may do so while the game is open.";
 			}
 
 			UpdateStatusAndFinish(true, "Edit ReShade settings", description);
@@ -859,6 +859,11 @@ namespace ReShade.Setup
 
 				InstallationStep0();
 			}
+		}
+
+		private void ApiDXGI_Checked(object sender, RoutedEventArgs e)
+		{
+
 		}
 	}
 }

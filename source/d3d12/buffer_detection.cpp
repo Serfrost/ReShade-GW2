@@ -9,6 +9,13 @@
 #include <mutex>
 #include <cmath>
 
+#include "custom.h"
+
+#include "runtime.hpp"
+
+unsigned int _vertice_count = 0;
+unsigned int _drawcall_count = 0;
+
 static std::mutex s_global_mutex;
 
 void reshade::d3d12::buffer_detection::init(ID3D12Device *device, ID3D12GraphicsCommandList *cmd_list, const buffer_detection_context *context)
@@ -24,7 +31,7 @@ void reshade::d3d12::buffer_detection::reset()
 #if RESHADE_DEPTH
 	_best_copy_stats = { 0, 0 };
 	_current_depthstencil.reset();
-	_has_indirect_drawcalls = false;
+///	_has_indirect_drawcalls = false;
 	_counters_per_used_depth_texture.clear();
 #endif
 }
@@ -58,7 +65,7 @@ void reshade::d3d12::buffer_detection::merge(const buffer_detection &source)
 	_current_depthstencil = source._current_depthstencil;
 
 	_best_copy_stats = source._best_copy_stats;
-	_has_indirect_drawcalls |= source._has_indirect_drawcalls;
+///	_has_indirect_drawcalls |= source._has_indirect_drawcalls;
 
 	for (const auto &[dsv_texture, snapshot] : source._counters_per_used_depth_texture)
 	{
@@ -67,6 +74,16 @@ void reshade::d3d12::buffer_detection::merge(const buffer_detection &source)
 		target_snapshot.total_stats.drawcalls += snapshot.total_stats.drawcalls;
 		target_snapshot.current_stats.vertices += snapshot.current_stats.vertices;
 		target_snapshot.current_stats.drawcalls += snapshot.current_stats.drawcalls;
+
+		//Vertices or Drawcalls that do not exceed the _limit will be set to 0 so they are ignored.
+
+		target_snapshot.total_stats.vertices = (target_snapshot.total_stats.vertices < _vertice_limit) ? 0 : target_snapshot.total_stats.vertices;
+		target_snapshot.total_stats.drawcalls = (target_snapshot.total_stats.drawcalls < _drawcall_limit) ? 0 : target_snapshot.total_stats.drawcalls;
+		target_snapshot.current_stats.vertices = (target_snapshot.current_stats.vertices < _vertice_limit) ? 0 : target_snapshot.current_stats.vertices;
+		target_snapshot.current_stats.drawcalls = (target_snapshot.current_stats.drawcalls < _drawcall_limit) ? 0 : target_snapshot.current_stats.drawcalls;
+
+		_vertice_count = target_snapshot.total_stats.vertices;
+		_drawcall_count = target_snapshot.total_stats.drawcalls;
 
 		target_snapshot.clears.insert(target_snapshot.clears.end(), snapshot.clears.begin(), snapshot.clears.end());
 	}
@@ -88,8 +105,8 @@ void reshade::d3d12::buffer_detection::on_draw(UINT vertices)
 	counters.current_stats.vertices += vertices;
 	counters.current_stats.drawcalls += 1;
 
-	if (vertices == 0)
-		_has_indirect_drawcalls = true;
+///	if (vertices == 0)
+///		_has_indirect_drawcalls = true;
 #endif
 }
 
@@ -224,8 +241,8 @@ com_ptr<ID3D12Resource> reshade::d3d12::buffer_detection_context::find_best_dept
 	{
 		for (auto &[dsv_texture, snapshot] : _counters_per_used_depth_texture)
 		{
-			if (snapshot.total_stats.drawcalls == 0)
-				continue; // Skip unused
+			/// if (snapshot.total_stats.drawcalls == 0)
+			///	continue; // Skip unused
 
 			const D3D12_RESOURCE_DESC desc = dsv_texture->GetDesc();
 			assert((desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL) != 0);
@@ -245,14 +262,114 @@ com_ptr<ID3D12Resource> reshade::d3d12::buffer_detection_context::find_best_dept
 					continue; // Not a good fit
 			}
 
-			if (!_has_indirect_drawcalls ?
-				// Choose snapshot with the most vertices, since that is likely to contain the main scene
-				snapshot.total_stats.vertices > best_snapshot.total_stats.vertices :
-				// Or check draw calls, since vertices may not be accurate if application is using indirect draw calls
-				snapshot.total_stats.drawcalls > best_snapshot.total_stats.drawcalls)
+			// Logic for Snapshot / Best Snapshot method & which to use:
+
+			if (_enable_vertices == 1 && _enable_drawcalls == 0) // Chooses Vertice snapshot with the highest count 100% of the time. Buffer only uses Vertices.
 			{
-				best_match = dsv_texture;
-				best_snapshot = snapshot;
+				if (snapshot.total_stats.vertices > best_snapshot.total_stats.vertices)
+				{
+					best_match = dsv_texture;
+					best_snapshot = snapshot;
+				}
+			}
+			else if (_enable_drawcalls == 1 && _enable_vertices == 0) // Chooses Drawcall snapshot with the highest count 100% of the time. Buffer only uses Drawcalls.
+			{
+				if (snapshot.total_stats.drawcalls > best_snapshot.total_stats.drawcalls)
+				{
+					best_match = dsv_texture;
+					best_snapshot = snapshot;
+				}
+			}
+			else if (_enable_priority == 1) // Will prioritize Vertices or Drawcalls if set to do so.
+			{
+				if (_priority == 0) // Disabled
+				{
+					if (snapshot.total_stats.vertices > snapshot.total_stats.drawcalls)
+					{
+						if (snapshot.total_stats.vertices > best_snapshot.total_stats.vertices)
+						{
+							best_match = dsv_texture;
+							best_snapshot = snapshot;
+						}
+					}
+					else if (snapshot.total_stats.drawcalls > snapshot.total_stats.vertices)
+					{
+						if (snapshot.total_stats.drawcalls > best_snapshot.total_stats.drawcalls)
+						{
+							best_match = dsv_texture;
+							best_snapshot = snapshot;
+						}
+					}
+				}
+				if (_priority == 1) // Set for Vertices
+				{
+					if (snapshot.total_stats.vertices > best_snapshot.total_stats.vertices)
+					{
+						best_match = dsv_texture;
+						best_snapshot = snapshot;
+					}
+				}
+				else if (_priority == 2) // Set for Drawcalls
+				{
+					if (snapshot.total_stats.drawcalls > best_snapshot.total_stats.drawcalls)
+					{
+						best_match = dsv_texture;
+						best_snapshot = snapshot;
+					}
+				}
+				else if (_priority == 0) // Pick Indescriminately
+
+					if (snapshot.total_stats.vertices > snapshot.total_stats.drawcalls)
+					{
+						if (snapshot.total_stats.vertices > best_snapshot.total_stats.vertices)
+						{
+							best_match = dsv_texture;
+							best_snapshot = snapshot;
+						}
+					}
+					else if (snapshot.total_stats.drawcalls > snapshot.total_stats.vertices)
+					{
+						if (snapshot.total_stats.drawcalls > best_snapshot.total_stats.drawcalls)
+						{
+							best_match = dsv_texture;
+							best_snapshot = snapshot;
+						}
+					}
+			}
+			else if (_enable_vertices == 1 && _enable_drawcalls == 1 && _enable_priority == 0) // Will pick between the two for the higher count indescriminately.
+			{
+				if (snapshot.total_stats.vertices > snapshot.total_stats.drawcalls)
+				{
+					if (snapshot.total_stats.vertices > best_snapshot.total_stats.vertices)
+					{
+						best_match = dsv_texture;
+						best_snapshot = snapshot;
+					}
+				}
+				else if (snapshot.total_stats.drawcalls > snapshot.total_stats.vertices)
+				{
+					if (snapshot.total_stats.drawcalls > best_snapshot.total_stats.drawcalls)
+					{
+						best_match = dsv_texture;
+						best_snapshot = snapshot;
+					}
+				}
+			}
+			else if (snapshot.total_stats.vertices > snapshot.total_stats.drawcalls)
+			{
+				if (snapshot.total_stats.vertices > best_snapshot.total_stats.vertices)
+				{
+					best_match = dsv_texture;
+					best_snapshot = snapshot;
+				}
+			}
+			else if (snapshot.total_stats.drawcalls > snapshot.total_stats.vertices)
+			{
+				if (snapshot.total_stats.drawcalls > best_snapshot.total_stats.drawcalls)
+				{
+					best_match = dsv_texture;
+					best_snapshot = snapshot;
+				}
 			}
 		}
 	}

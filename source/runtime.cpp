@@ -20,6 +20,17 @@
 #include <stb_image_write.h>
 #include <stb_image_resize.h>
 
+#include "d3d12/runtime_d3d12.hpp"
+#include "d3d12/buffer_detection.hpp"
+
+#include "custom.h"
+
+bool _startup_reload = true;
+bool _auto_reload = false;
+
+bool _auto_reload_vertices = false;
+bool _auto_reload_drawcalls = false;
+
 extern volatile long g_network_traffic;
 extern std::filesystem::path g_reshade_dll_path;
 extern std::filesystem::path g_target_executable_path;
@@ -120,7 +131,7 @@ reshade::runtime::runtime() :
 		// If neither exist create a "ReShade.ini" in the ReShade DLL directory
 		_configuration_path = g_reshade_dll_path.parent_path() / L"ReShade.ini";
 
-	_needs_update = check_for_update(_latest_version);
+
 
 #if RESHADE_GUI
 	init_ui();
@@ -242,22 +253,58 @@ void reshade::runtime::on_present()
 	if (!ini_file::flush_cache())
 		_preset_save_success = false;
 
-	// Detect high network traffic
-	static int cooldown = 0, traffic = 0;
-	if (cooldown-- > 0)
+	if (_auto_reload_vertices == false)
 	{
-		traffic += g_network_traffic > 0;
+		if (_vertice_count == 0)
+		{
+			_auto_reload_vertices = true;
+		}
 	}
-	else
+	else if (_auto_reload_drawcalls == false)
 	{
-		_has_high_network_activity = traffic > 10;
-		traffic = 0;
-		cooldown = 60;
+		if (_drawcall_count == 0)
+		{
+			_auto_reload_drawcalls = true;
+		}
 	}
 
-	// Reset frame statistics
-	g_network_traffic = 0;
-	_drawcalls = _vertices = 0;
+	if (_auto_reload_vertices == true)
+	{
+		if (_vertice_count >= _vertice_limit)
+		{
+			_auto_reload_vertices = false;
+			_auto_reload = true;
+			runtime::load_effects();
+			_auto_reload = false;
+		}
+	}
+	else if (_auto_reload_drawcalls == true)
+	{
+		if (_drawcall_count >= _drawcall_limit)
+		{
+			_auto_reload_drawcalls = false;
+			_auto_reload = true;
+			runtime::load_effects();
+			_auto_reload = false;
+		}
+	}
+
+	// Detect high network traffic
+	static int cooldown = 0, traffic = 0;
+///	if (cooldown-- > 0)
+///	{
+///		traffic += g_network_traffic > 0;
+///	}
+///	else
+///	{
+///		_has_high_network_activity = traffic > 10;
+///		traffic = 0;
+///		cooldown = 60;
+///	}
+///
+///	// Reset frame statistics
+///	g_network_traffic = 0;
+///	_drawcalls = _vertices = 0;
 }
 
 bool reshade::runtime::load_effect(const std::filesystem::path &path, size_t index)
@@ -561,8 +608,23 @@ bool reshade::runtime::load_effects()
 	// Clear out any previous effects
 	unload_effects();
 
-#if RESHADE_GUI
-	_show_splash = true; // Always show splash bar when reloading everything
+#if RESHADE_GUI   // Only show splash with reload hotkey.
+
+	if (_startup_reload == true)
+	{
+		_show_splash = false;
+		_startup_reload = false;
+	}
+	else if (_auto_reload == true)
+	{
+		_show_splash = false;
+	}
+	else if (_manual_reload == true)
+	{
+		_show_splash = false;
+	}
+	else _show_splash = true;
+
 #endif
 	_last_reload_successful = true;
 
@@ -715,7 +777,8 @@ void reshade::runtime::unload_effects()
 void reshade::runtime::update_and_render_effects()
 {
 	// Delay first load to the first render call to avoid loading while the application is still initializing
-	if (_framecount == 0 && !_no_reload_on_init)
+
+	if (_framecount == _startupdelay && !_no_reload_on_init)
 		load_effects();
 
 	if (_reload_remaining_effects == 0)

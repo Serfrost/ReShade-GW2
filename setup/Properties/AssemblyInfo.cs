@@ -1,9 +1,9 @@
 ﻿using System.Reflection;
 
-[assembly: AssemblyTitle("ReShade Setup")]
-[assembly: AssemblyVersion("3.1.0.0")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyTitle("ReShade-MOD 4.5.4-X Setup")]
+[assembly: AssemblyVersion("4.5.4")]
+[assembly: AssemblyDescription("Compiled by Serfrost")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("crosire")]
 [assembly: AssemblyProduct("ReShade")]
-[assembly: AssemblyCopyright("Copyright © 2014. All rights reserved.")]
+[assembly: AssemblyCopyright("Copyright © 2014. All rights reserved by crosire.")]
