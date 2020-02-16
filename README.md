@@ -1,3 +1,19 @@
+The modifications in this fork are meant to supplement D912Pxy's PSO Cache loading to help prevent games from crashing immediately, allowing both ReShade and Depth Buffer support on different D3D9 => DX12 Titles. Updates may be few and far inbetween, but the initial release should allow for most issues to be avoided by using Custom Configurations if the situation arises.
+
+===============================================================================
+
+Guild Wars 2 Development Community - https://discord.gg/huJXkr2
+
+megai2's D912Pxy Repository - https://github.com/megai2/d912pxy
+
+Original ReShade Repository by Crosire - https://github.com/crosire/reshade
+
+I personally recommend keeping an eye on Pascal's qUINT Repository - https://github.com/martymcmodding/qUINT
+
+===============================================================================
+
+Original ReadMe:
+
 ReShade
 =======
 

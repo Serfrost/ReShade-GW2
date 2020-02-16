@@ -12,6 +12,8 @@
 #include <functional>
 #include <filesystem>
 
+#include "custom.h"
+
 #if RESHADE_GUI
 #include "imgui_editor.hpp"
 
@@ -38,6 +40,20 @@ namespace reshade
 		/// Return whether the runtime is initialized.
 		/// </summary>
 		bool is_initialized() const { return _is_initialized; }
+
+		uint64_t _framecount = 0;
+		unsigned int _vertices = 0;
+		unsigned int _drawcalls = 0;
+
+		/// <summary>
+		/// Load all effects found in the effect search paths.
+		/// </summary>
+		bool load_effects();
+
+		/// <summary>
+		/// Apply post-processing effects to the frame.
+		/// </summary>
+		void update_and_render_effects();
 
 		/// <summary>
 		/// Return the frame width in pixels.
@@ -153,10 +169,6 @@ namespace reshade
 		/// <param name="index">The ID of the effect.</param>
 		bool load_effect(const std::filesystem::path &path, size_t index);
 		/// <summary>
-		/// Load all effects found in the effect search paths.
-		/// </summary>
-		bool load_effects();
-		/// <summary>
 		/// Initialize resources for the effect and load the effect module.
 		/// </summary>
 		/// <param name="index">The ID of the effect.</param>
@@ -176,10 +188,6 @@ namespace reshade
 		/// </summary>
 		void load_textures();
 
-		/// <summary>
-		/// Apply post-processing effects to the frame.
-		/// </summary>
-		void update_and_render_effects();
 		/// <summary>
 		/// Render all passes in a technique.
 		/// </summary>
@@ -204,10 +212,6 @@ namespace reshade
 		unsigned int _device_id = 0;
 		unsigned int _renderer_id = 0;
 		unsigned int _color_bit_depth = 8;
-
-		uint64_t _framecount = 0;
-		unsigned int _vertices = 0;
-		unsigned int _drawcalls = 0;
 
 		std::vector<effect> _effects;
 		std::vector<texture> _textures;
@@ -347,7 +351,7 @@ namespace reshade
 		bool _show_clock = false;
 		bool _show_fps = false;
 		bool _show_frametime = false;
-		bool _show_splash = true;
+		bool _show_splash = false;
 		bool _show_code_editor = false;
 		bool _show_screenshot_message = true;
 		bool _no_font_scaling = false;

@@ -745,9 +745,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 		log::open(std::filesystem::path(g_reshade_dll_path).replace_extension(".log"));
 
 #ifdef WIN64
-		LOG(INFO) << "Initializing crosire's ReShade version '" VERSION_STRING_FILE "' (64-bit) built on '" VERSION_DATE " " VERSION_TIME "' loaded from " << g_reshade_dll_path << " into " << g_target_executable_path << " ...";
+		LOG(INFO) << "Initializing Serfrost's ReShade-MOD '" VERSION_STRING_FILE "' (64-bit) loaded from " << g_reshade_dll_path << " into " << g_target_executable_path << " ...";
 #else
-		LOG(INFO) << "Initializing crosire's ReShade version '" VERSION_STRING_FILE "' (32-bit) built on '" VERSION_DATE " " VERSION_TIME "' loaded from " << g_reshade_dll_path << " into " << g_target_executable_path << " ...";
+		LOG(INFO) << "Initializing Serfrost's ReShade-MOD '" VERSION_STRING_FILE "' (32-bit) loaded from " << g_reshade_dll_path << " into " << g_target_executable_path << " ...";
 #endif
 
 		// Check if another ReShade instance was already loaded into the process

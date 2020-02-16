@@ -6,7 +6,7 @@
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <OutputType>WinExe</OutputType>
-    <AssemblyName>ReShade Setup</AssemblyName>
+    <AssemblyName>ReShade-MOD 4.5.4-r2 Setup</AssemblyName>
     <ApplicationIcon>Properties\Icon.ico</ApplicationIcon>
     <OutputPath>$(SolutionDir)\bin\$(Platform)\$(Configuration)\</OutputPath>
     <IntermediateOutputPath>$(SolutionDir)\intermediate\$(AssemblyName)\$(Platform)\$(Configuration)\</IntermediateOutputPath>
