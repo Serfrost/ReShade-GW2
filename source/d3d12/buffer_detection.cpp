@@ -11,8 +11,7 @@
 
 #include "custom.h"
 
-#include "runtime.hpp"
-
+bool _verified = false;
 unsigned int _vertice_count = 0;
 unsigned int _drawcall_count = 0;
 
@@ -77,10 +76,13 @@ void reshade::d3d12::buffer_detection::merge(const buffer_detection &source)
 
 		//Vertices or Drawcalls that do not exceed the _limit will be set to 0 so they are ignored.
 
-		target_snapshot.total_stats.vertices = (target_snapshot.total_stats.vertices < _vertice_limit) ? 0 : target_snapshot.total_stats.vertices;
-		target_snapshot.total_stats.drawcalls = (target_snapshot.total_stats.drawcalls < _drawcall_limit) ? 0 : target_snapshot.total_stats.drawcalls;
-		target_snapshot.current_stats.vertices = (target_snapshot.current_stats.vertices < _vertice_limit) ? 0 : target_snapshot.current_stats.vertices;
-		target_snapshot.current_stats.drawcalls = (target_snapshot.current_stats.drawcalls < _drawcall_limit) ? 0 : target_snapshot.current_stats.drawcalls;
+		if (_preset != 1)
+		{
+			target_snapshot.total_stats.vertices = (target_snapshot.total_stats.vertices < _vertice_limit) ? 0 : target_snapshot.total_stats.vertices;
+			target_snapshot.total_stats.drawcalls = (target_snapshot.total_stats.drawcalls < _drawcall_limit) ? 0 : target_snapshot.total_stats.drawcalls;
+			target_snapshot.current_stats.vertices = (target_snapshot.current_stats.vertices < _vertice_limit) ? 0 : target_snapshot.current_stats.vertices;
+			target_snapshot.current_stats.drawcalls = (target_snapshot.current_stats.drawcalls < _drawcall_limit) ? 0 : target_snapshot.current_stats.drawcalls;
+		};
 
 		_vertice_count = target_snapshot.total_stats.vertices;
 		_drawcall_count = target_snapshot.total_stats.drawcalls;
@@ -241,8 +243,10 @@ com_ptr<ID3D12Resource> reshade::d3d12::buffer_detection_context::find_best_dept
 	{
 		for (auto &[dsv_texture, snapshot] : _counters_per_used_depth_texture)
 		{
-			/// if (snapshot.total_stats.drawcalls == 0)
-			///	continue; // Skip unused
+			if (_preset == 1 && _verified == false && snapshot.total_stats.vertices < 800000)
+			{
+				continue; //Skip all with less than 800k
+			}
 
 			const D3D12_RESOURCE_DESC desc = dsv_texture->GetDesc();
 			assert((desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL) != 0);
@@ -252,19 +256,60 @@ com_ptr<ID3D12Resource> reshade::d3d12::buffer_detection_context::find_best_dept
 
 			if (width != 0 && height != 0)
 			{
-				const float aspect_ratio = float(width) / float(height);
-				const float texture_aspect_ratio = float(desc.Width) / float(desc.Height);
+				const float w = static_cast<float>(width);
+				const float w_ratio = w / desc.Width;
+				const float h = static_cast<float>(height);
+				const float h_ratio = h / desc.Height;
+				const float aspect_ratio = (w / h) - (static_cast<float>(desc.Width) / desc.Height);
 
-				const float width_factor = float(width) / float(desc.Width);
-				const float height_factor = float(height) / float(desc.Height);
-
-				if (std::fabs(texture_aspect_ratio - aspect_ratio) > 0.1f || width_factor > 1.85f || height_factor > 1.85f || width_factor < 0.5f || height_factor < 0.5f)
+				if (std::fabs(aspect_ratio) > 0.1f || w_ratio > 1.85f || h_ratio > 1.85f || w_ratio < 0.5f || h_ratio < 0.5f)
 					continue; // Not a good fit
 			}
 
 			// Logic for Snapshot / Best Snapshot method & which to use:
 
-			if (_enable_vertices == 1 && _enable_drawcalls == 0) // Chooses Vertice snapshot with the highest count 100% of the time. Buffer only uses Vertices.
+			if (_preset == 0 || 2 || 4) //If Disabled, or Blade&Soul, or Debug..
+			{
+				if (snapshot.total_stats.vertices > best_snapshot.total_stats.vertices)
+				{
+					best_snapshot = snapshot;
+					best_match = dsv_texture;
+					continue;
+				}
+			}
+			else if (_preset == 1) //If Guild Wars 2..
+			{
+				if (_verified == false && snapshot.total_stats.vertices || best_snapshot.total_stats.vertices >= 800000)
+				{
+					_verified = true;
+
+					if (snapshot.total_stats.vertices > best_snapshot.total_stats.vertices)
+					{
+						best_match = dsv_texture; //Accepts first buffer that reaches 800k verts, sets _verified
+						best_snapshot = snapshot; //_verified sets vert & drawcall limit to 1 instead of 800k
+					}
+				}
+				else if (_verified == true && snapshot.total_stats.vertices || best_snapshot.total_stats.vertices >= 1)
+				{
+					if (snapshot.total_stats.vertices > best_snapshot.total_stats.vertices)
+					{
+						best_match = dsv_texture;
+						best_snapshot = snapshot; //If verts stay above 1, retains buffer.
+					}
+				}
+				else if (_verified == true && snapshot.total_stats.vertices || best_snapshot.total_stats.vertices < 1)
+				{
+					_verified = false;
+
+					if (snapshot.total_stats.vertices > best_snapshot.total_stats.vertices)
+					{
+						best_match = dsv_texture;
+						best_snapshot = snapshot; //If verts drop to 0, unverifies, sets vert limit to 800k again.
+					}
+				}
+
+			}
+			else if (_enable_vertices == 1 && _enable_drawcalls == 0) // Chooses Vertice snapshot with the highest count 100% of the time. Buffer only uses Vertices.
 			{
 				if (snapshot.total_stats.vertices > best_snapshot.total_stats.vertices)
 				{
@@ -392,6 +437,7 @@ com_ptr<ID3D12Resource> reshade::d3d12::buffer_detection_context::find_best_dept
 
 	_depthstencil_clear_index = { nullptr, std::numeric_limits<UINT>::max() };
 
-	return best_match;
+return best_match;
+
 }
 #endif

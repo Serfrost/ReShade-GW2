@@ -25,8 +25,18 @@
 
 #include "custom.h"
 
+bool _set_preset_0 = false;
+bool _set_preset_1 = false;
+bool _set_preset_2 = false;
+bool _set_preset_3 = false;
+bool _set_preset_4 = false;
+
+unsigned int _vertice_limit = 800000;
+unsigned int _drawcall_limit = 800000;
+
 bool _startup_reload = true;
 bool _auto_reload = false;
+bool _verified_reset = false;
 
 bool _auto_reload_vertices = false;
 bool _auto_reload_drawcalls = false;
@@ -253,6 +263,84 @@ void reshade::runtime::on_present()
 	// Save modified INI files
 	if (!ini_file::flush_cache())
 		_preset_save_success = false;
+
+	if (_reset_vertices == true)
+	{
+		if (_enable_vertices == 0)
+		{
+			_vertice_limit = 1500000;
+		}
+
+	if (_reset_drawcalls == true)
+
+		if (_enable_drawcalls == 0)
+		{
+			_drawcall_limit = 1500000;
+		}
+	}
+
+	if (_preset_0 == true && _set_preset_0 == false)
+	{
+		_set_preset_0 = true;
+		_set_preset_2 = false;
+		_set_preset_3 = false;
+		_set_preset_4 = false;
+		_vertice_limit = 800000;
+		_drawcall_limit = 800000;
+	}
+
+	if (_preset_1 == true && _set_preset_1 == false)
+	{
+		_set_preset_0 = false;
+		_set_preset_2 = false;
+		_set_preset_3 = false;
+		_set_preset_4 = false;
+
+		if (_verified == true && _verified_reset == false)
+		{
+			_verified_reset = true;
+			_vertice_limit = 1;
+			_drawcall_limit = 1;
+			runtime::load_effects();
+		}
+
+		if (_verified == false)
+		{
+			_verified_reset = false;
+			_vertice_limit = 800000;
+			_drawcall_limit = 800000;
+		}
+	}
+
+	if (_preset_2 == true && _set_preset_2 == false)
+	{
+		_set_preset_0 = false;
+		_set_preset_2 = true;
+		_set_preset_3 = false;
+		_set_preset_4 = false;
+		_vertice_limit = 1500000;
+		_drawcall_limit = 1500000;
+	}
+
+	if (_preset_3 == true && _set_preset_3 == false)
+	{
+		_set_preset_0 = false;
+		_set_preset_2 = false;
+		_set_preset_3 = true;
+		_set_preset_4 = false;
+		_vertice_limit = 800000;
+		_drawcall_limit = 800000;
+	}
+
+	if (_preset_4 == true && _set_preset_4 == false)
+	{
+		_set_preset_0 = false;
+		_set_preset_2 = false;
+		_set_preset_3 = false;
+		_set_preset_4 = true;
+		_vertice_limit = 1;
+		_drawcall_limit = 1;
+	}
 
 	if (_auto_reload_vertices == false)
 	{

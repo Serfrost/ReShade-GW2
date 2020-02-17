@@ -10,9 +10,6 @@
 #include "buffer_detection.hpp"
 #include <unordered_set>
 
-namespace reshade { enum class texture_reference; }
-namespace reshadefx { struct sampler_info; }
-
 namespace reshade::opengl
 {
 	class runtime_gl : public runtime
@@ -97,20 +94,22 @@ namespace reshade::opengl
 		void init_imgui_resources();
 		void render_imgui_draw_data(ImDrawData *data) override;
 
-		GLuint _imgui_program = 0;
-		int _imgui_uniform_tex = 0;
-		int _imgui_uniform_proj = 0;
+		struct imgui_resources
+		{
+			GLuint program = 0;
+			int uniform_tex_location = 0;
+			int uniform_proj_location = 0;
+		} _imgui;
 #endif
 
 #if RESHADE_DEPTH
 		void draw_depth_debug_menu();
-		void update_depthstencil_texture(buffer_detection::depthstencil_info info);
+		void update_depth_texture_bindings(buffer_detection::depthstencil_info info);
 
 		bool _copy_depth_source = true;
 		bool _use_aspect_ratio_heuristics = true;
 		GLuint _depth_source = 0;
-		GLuint _depth_source_width = 0;
-		GLuint _depth_source_height = 0;
+		GLuint _depth_source_width = 0, _depth_source_height = 0;
 		GLenum _depth_source_format = 0;
 		GLuint _depth_source_override = std::numeric_limits<GLuint>::max();
 #endif

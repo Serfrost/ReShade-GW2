@@ -196,7 +196,8 @@ reshade::vulkan::runtime_vk::runtime_vk(VkDevice device, VkPhysicalDevice physic
 #if RESHADE_DEPTH
 		ImGui::Spacing();
 
-		draw_depth_debug_menu();
+		assert(_buffer_detection != nullptr);
+		draw_depth_debug_menu(*_buffer_detection);
 #endif
 	});
 #endif
@@ -492,26 +493,26 @@ void reshade::vulkan::runtime_vk::on_reset()
 #if RESHADE_GUI
 	for (unsigned int i = 0; i < NUM_IMGUI_BUFFERS; ++i)
 	{
-		vmaDestroyBuffer(_alloc, _imgui_index_buffer[i], _imgui_index_mem[i]);
-		_imgui_index_mem[i] = VK_NULL_HANDLE;
-		_imgui_index_buffer[i] = VK_NULL_HANDLE;
-		_imgui_index_buffer_size[i] = 0;
-		vmaDestroyBuffer(_alloc, _imgui_vertex_buffer[i], _imgui_vertex_mem[i]);
-		_imgui_vertex_mem[i] = VK_NULL_HANDLE;
-		_imgui_vertex_buffer[i] = VK_NULL_HANDLE;
-		_imgui_vertex_buffer_size[i] = 0;
+		vmaDestroyBuffer(_alloc, _imgui.indices[i], _imgui.indices_mem[i]);
+		vmaDestroyBuffer(_alloc, _imgui.vertices[i], _imgui.vertices_mem[i]);
+		_imgui.indices[i] = VK_NULL_HANDLE;
+		_imgui.vertices[i] = VK_NULL_HANDLE;
+		_imgui.indices_mem[i] = VK_NULL_HANDLE;
+		_imgui.vertices_mem[i] = VK_NULL_HANDLE;
+		_imgui.num_indices[i] = 0;
+		_imgui.num_vertices[i] = 0;
 	}
 
-	vk.DestroyPipeline(_device, _imgui_pipeline, nullptr);
-	_imgui_pipeline = VK_NULL_HANDLE;
-	vk.DestroyPipelineLayout(_device, _imgui_pipeline_layout, nullptr);
-	_imgui_pipeline_layout = VK_NULL_HANDLE;
-	vk.DestroyDescriptorPool(_device, _imgui_descriptor_pool, nullptr);
-	_imgui_descriptor_pool = VK_NULL_HANDLE;
-	vk.DestroyDescriptorSetLayout(_device, _imgui_descriptor_set_layout, nullptr);
-	_imgui_descriptor_set_layout = VK_NULL_HANDLE;
-	vk.DestroySampler(_device, _imgui_font_sampler, nullptr);
-	_imgui_font_sampler = VK_NULL_HANDLE;
+	vk.DestroyPipeline(_device, _imgui.pipeline, nullptr);
+	_imgui.pipeline = VK_NULL_HANDLE;
+	vk.DestroyPipelineLayout(_device, _imgui.pipeline_layout, nullptr);
+	_imgui.pipeline_layout = VK_NULL_HANDLE;
+	vk.DestroyDescriptorPool(_device, _imgui.descriptor_pool, nullptr);
+	_imgui.descriptor_pool = VK_NULL_HANDLE;
+	vk.DestroyDescriptorSetLayout(_device, _imgui.descriptor_layout, nullptr);
+	_imgui.descriptor_layout = VK_NULL_HANDLE;
+	vk.DestroySampler(_device, _imgui.sampler, nullptr);
+	_imgui.sampler = VK_NULL_HANDLE;
 #endif
 
 #if RESHADE_DEPTH
@@ -527,13 +528,14 @@ void reshade::vulkan::runtime_vk::on_reset()
 	_allocations.clear();
 }
 
-void reshade::vulkan::runtime_vk::on_present(uint32_t swapchain_image_index, const VkSemaphore *wait, uint32_t num_wait, VkSemaphore &signal, buffer_detection_context &tracker)
+void reshade::vulkan::runtime_vk::on_present(uint32_t swapchain_image_index, const VkSemaphore *wait, uint32_t num_wait, VkSemaphore &signal)
 {
 	if (!_is_initialized)
 		return;
 
-	_vertices = tracker.total_vertices();
-	_drawcalls = tracker.total_drawcalls();
+	assert(_buffer_detection != nullptr);
+	_vertices = _buffer_detection->total_vertices();
+	_drawcalls = _buffer_detection->total_drawcalls();
 
 	_cmd_index = _framecount % NUM_COMMAND_FRAMES;
 	_swap_index = swapchain_image_index;
@@ -546,9 +548,8 @@ void reshade::vulkan::runtime_vk::on_present(uint32_t swapchain_image_index, con
 	}
 
 #if RESHADE_DEPTH
-	_current_tracker = &tracker;
-	update_depthstencil_image(_has_high_network_activity ? buffer_detection::depthstencil_info { VK_NULL_HANDLE } :
-		tracker.find_best_depth_texture(_use_aspect_ratio_heuristics ? _width : 0, _height, _depth_image_override));
+	update_depth_image_bindings(_has_high_network_activity ? buffer_detection::depthstencil_info { VK_NULL_HANDLE } :
+		_buffer_detection->find_best_depth_texture(_use_aspect_ratio_heuristics ? VkExtent2D { _width, _height } : VkExtent2D { 0, 0 }, _depth_image_override));
 #endif
 
 	update_and_render_effects();
@@ -1015,8 +1016,8 @@ bool reshade::vulkan::runtime_vk::init_effect(size_t index)
 
 			const VkRect2D scissor_rect = {
 				{ 0, 0 },
-				{ pass_info.viewport_width ? pass_info.viewport_width : frame_width(),
-				  pass_info.viewport_height ? pass_info.viewport_height : frame_height() }
+				{ pass_info.viewport_width ? pass_info.viewport_width : _width,
+				  pass_info.viewport_height ? pass_info.viewport_height : _height }
 			};
 			const VkViewport viewport_rect = {
 				0.0f, 0.0f,
@@ -1073,7 +1074,7 @@ bool reshade::vulkan::runtime_vk::init_effect(size_t index)
 				pass_data.begin_info.pClearValues = pass_data.clear_values; // These are initialized to zero already
 			}
 
-			if (num_color_attachments == 0)
+			if (pass_info.render_target_names[0].empty())
 			{
 				num_color_attachments = 1;
 				pass_data.begin_info.renderPass = _default_render_pass[pass_info.srgb_write_enable];
@@ -1419,13 +1420,13 @@ bool reshade::vulkan::runtime_vk::init_texture(texture &texture)
 
 #if RESHADE_GUI
 	// Only need to allocate descriptor sets for textures when push descriptors are not available
-	if (_imgui_descriptor_pool != VK_NULL_HANDLE)
+	if (_imgui.descriptor_pool != VK_NULL_HANDLE)
 	{
 		VkDescriptorSetAllocateInfo alloc_info { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
-		alloc_info.descriptorPool = _imgui_descriptor_pool;
+		alloc_info.descriptorPool = _imgui.descriptor_pool;
 		alloc_info.descriptorSetCount = 1;
-		alloc_info.pSetLayouts = &_imgui_descriptor_set_layout;
-		assert(_imgui_descriptor_set_layout != VK_NULL_HANDLE);
+		assert(_imgui.descriptor_layout != VK_NULL_HANDLE);
+		alloc_info.pSetLayouts = &_imgui.descriptor_layout;
 
 		if (vk.AllocateDescriptorSets(_device, &alloc_info, &impl->descriptor_set) != VK_SUCCESS)
 		{
@@ -1438,7 +1439,7 @@ bool reshade::vulkan::runtime_vk::init_texture(texture &texture)
 		write.dstBinding = 0;
 		write.descriptorCount = 1;
 		write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		const VkDescriptorImageInfo image_info { _imgui_font_sampler, impl->view[0], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+		const VkDescriptorImageInfo image_info { _imgui.sampler, impl->view[0], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
 		write.pImageInfo = &image_info;
 
 		vk.UpdateDescriptorSets(_device, 1, &write, 0, nullptr);
@@ -1541,7 +1542,7 @@ void reshade::vulkan::runtime_vk::destroy_texture(texture &texture)
 		vk.DestroyImageView(_device, impl->view[3], nullptr);
 #if RESHADE_GUI
 	if (impl->descriptor_set != VK_NULL_HANDLE)
-		vk.FreeDescriptorSets(_device, _imgui_descriptor_pool, 1, &impl->descriptor_set);
+		vk.FreeDescriptorSets(_device, _imgui.descriptor_pool, 1, &impl->descriptor_set);
 #endif
 
 	delete impl;
@@ -1886,7 +1887,7 @@ bool reshade::vulkan::runtime_vk::init_imgui_resources()
 		create_info.minLod = -1000;
 		create_info.maxLod = +1000;
 
-		check_result(vk.CreateSampler(_device, &create_info, nullptr, &_imgui_font_sampler)) false;
+		check_result(vk.CreateSampler(_device, &create_info, nullptr, &_imgui.sampler)) false;
 	}
 
 	// Only need to allocate descriptors when push descriptors are not supported
@@ -1902,14 +1903,14 @@ bool reshade::vulkan::runtime_vk::init_imgui_resources()
 		create_info.poolSizeCount = static_cast<uint32_t>(std::size(pool_sizes));
 		create_info.pPoolSizes = pool_sizes;
 
-		check_result(vk.CreateDescriptorPool(_device, &create_info, nullptr, &_imgui_descriptor_pool)) false;
+		check_result(vk.CreateDescriptorPool(_device, &create_info, nullptr, &_imgui.descriptor_pool)) false;
 	}
 
 	{   VkDescriptorSetLayoutBinding bindings[1] = {};
 		bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		bindings[0].descriptorCount = 1;
 		bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-		bindings[0].pImmutableSamplers = &_imgui_font_sampler;
+		bindings[0].pImmutableSamplers = &_imgui.sampler;
 
 		VkDescriptorSetLayoutCreateInfo create_info { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
 		if (vk.CmdPushDescriptorSetKHR != nullptr)
@@ -1917,14 +1918,14 @@ bool reshade::vulkan::runtime_vk::init_imgui_resources()
 		create_info.bindingCount = static_cast<uint32_t>(std::size(bindings));
 		create_info.pBindings = bindings;
 
-		check_result(vk.CreateDescriptorSetLayout(_device, &create_info, nullptr, &_imgui_descriptor_set_layout)) false;
+		check_result(vk.CreateDescriptorSetLayout(_device, &create_info, nullptr, &_imgui.descriptor_layout)) false;
 	}
 
 	{   const VkPushConstantRange push_constants[] = {
 			{ VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(float) * 4 }
 		};
 		const VkDescriptorSetLayout descriptor_layouts[] = {
-			_imgui_descriptor_set_layout
+			_imgui.descriptor_layout
 		};
 
 		VkPipelineLayoutCreateInfo create_info { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
@@ -1933,7 +1934,7 @@ bool reshade::vulkan::runtime_vk::init_imgui_resources()
 		create_info.pushConstantRangeCount = static_cast<uint32_t>(std::size(push_constants));
 		create_info.pPushConstantRanges = push_constants;
 
-		check_result(vk.CreatePipelineLayout(_device, &create_info, nullptr, &_imgui_pipeline_layout)) false;
+		check_result(vk.CreatePipelineLayout(_device, &create_info, nullptr, &_imgui.pipeline_layout)) false;
 	}
 
 	VkVertexInputBindingDescription binding_desc[1] = {};
@@ -2010,10 +2011,10 @@ bool reshade::vulkan::runtime_vk::init_imgui_resources()
 	create_info.pDepthStencilState = &depth_info;
 	create_info.pColorBlendState = &blend_info;
 	create_info.pDynamicState = &dynamic_state;
-	create_info.layout = _imgui_pipeline_layout;
+	create_info.layout = _imgui.pipeline_layout;
 	create_info.renderPass = _default_render_pass[0];
 
-	check_result(vk.CreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &create_info, nullptr, &_imgui_pipeline)) false;
+	check_result(vk.CreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &create_info, nullptr, &_imgui.pipeline)) false;
 
 	return true;
 }
@@ -2024,37 +2025,37 @@ void reshade::vulkan::runtime_vk::render_imgui_draw_data(ImDrawData *draw_data)
 	const unsigned int buffer_index = _framecount % NUM_IMGUI_BUFFERS;
 
 	// Create and grow vertex/index buffers if needed
-	if (_imgui_index_buffer_size[buffer_index] < draw_data->TotalIdxCount)
+	if (_imgui.num_indices[buffer_index] < draw_data->TotalIdxCount)
 	{
 		wait_for_command_buffers(); // Be safe and ensure nothing still uses this buffer
 
-		vmaDestroyBuffer(_alloc, _imgui_index_buffer[buffer_index], _imgui_index_mem[buffer_index]);
+		vmaDestroyBuffer(_alloc, _imgui.indices[buffer_index], _imgui.indices_mem[buffer_index]);
 
 		const int new_size = draw_data->TotalIdxCount + 10000;
-		_imgui_index_buffer[buffer_index] = create_buffer(new_size * sizeof(ImDrawIdx),
+		_imgui.indices[buffer_index] = create_buffer(new_size * sizeof(ImDrawIdx),
 			VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU,
-			0, 0, &_imgui_index_mem[buffer_index]);
-		if (_imgui_index_buffer[buffer_index] == VK_NULL_HANDLE)
+			0, 0, &_imgui.indices_mem[buffer_index]);
+		if (_imgui.indices[buffer_index] == VK_NULL_HANDLE)
 			return;
-		_imgui_index_buffer_size[buffer_index] = new_size;
+		_imgui.num_indices[buffer_index] = new_size;
 	}
-	if (_imgui_vertex_buffer_size[buffer_index] < draw_data->TotalVtxCount)
+	if (_imgui.num_vertices[buffer_index] < draw_data->TotalVtxCount)
 	{
 		wait_for_command_buffers();
 
-		vmaDestroyBuffer(_alloc, _imgui_vertex_buffer[buffer_index], _imgui_vertex_mem[buffer_index]);
+		vmaDestroyBuffer(_alloc, _imgui.vertices[buffer_index], _imgui.vertices_mem[buffer_index]);
 
 		const int new_size = draw_data->TotalVtxCount + 5000;
-		_imgui_vertex_buffer[buffer_index] = create_buffer(new_size * sizeof(ImDrawVert),
+		_imgui.vertices[buffer_index] = create_buffer(new_size * sizeof(ImDrawVert),
 			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU,
-			0, 0, &_imgui_vertex_mem[buffer_index]);
-		if (_imgui_vertex_buffer[buffer_index] == VK_NULL_HANDLE)
+			0, 0, &_imgui.vertices_mem[buffer_index]);
+		if (_imgui.vertices[buffer_index] == VK_NULL_HANDLE)
 			return;
-		_imgui_vertex_buffer_size[buffer_index] = new_size;
+		_imgui.num_vertices[buffer_index] = new_size;
 	}
 
 	if (ImDrawIdx *idx_dst;
-		vmaMapMemory(_alloc, _imgui_index_mem[buffer_index], reinterpret_cast<void **>(&idx_dst)) == VK_SUCCESS)
+		vmaMapMemory(_alloc, _imgui.indices_mem[buffer_index], reinterpret_cast<void **>(&idx_dst)) == VK_SUCCESS)
 	{
 		for (int n = 0; n < draw_data->CmdListsCount; ++n)
 		{
@@ -2063,10 +2064,10 @@ void reshade::vulkan::runtime_vk::render_imgui_draw_data(ImDrawData *draw_data)
 			idx_dst += draw_list->IdxBuffer.Size;
 		}
 
-		vmaUnmapMemory(_alloc, _imgui_index_mem[buffer_index]);
+		vmaUnmapMemory(_alloc, _imgui.indices_mem[buffer_index]);
 	}
 	if (ImDrawVert *vtx_dst;
-		vmaMapMemory(_alloc, _imgui_vertex_mem[buffer_index], reinterpret_cast<void **>(&vtx_dst)) == VK_SUCCESS)
+		vmaMapMemory(_alloc, _imgui.vertices_mem[buffer_index], reinterpret_cast<void **>(&vtx_dst)) == VK_SUCCESS)
 	{
 		for (int n = 0; n < draw_data->CmdListsCount; ++n)
 		{
@@ -2075,7 +2076,7 @@ void reshade::vulkan::runtime_vk::render_imgui_draw_data(ImDrawData *draw_data)
 			vtx_dst += draw_list->VtxBuffer.Size;
 		}
 
-		vmaUnmapMemory(_alloc, _imgui_vertex_mem[buffer_index]);
+		vmaUnmapMemory(_alloc, _imgui.vertices_mem[buffer_index]);
 	}
 
 	if (!begin_command_buffer())
@@ -2090,7 +2091,7 @@ void reshade::vulkan::runtime_vk::render_imgui_draw_data(ImDrawData *draw_data)
 	}
 
 	// Setup render state
-	vk.CmdBindPipeline(cmd_list, VK_PIPELINE_BIND_POINT_GRAPHICS, _imgui_pipeline);
+	vk.CmdBindPipeline(cmd_list, VK_PIPELINE_BIND_POINT_GRAPHICS, _imgui.pipeline);
 
 	// Setup orthographic projection matrix
 	const float scale[2] = {
@@ -2101,12 +2102,12 @@ void reshade::vulkan::runtime_vk::render_imgui_draw_data(ImDrawData *draw_data)
 		-1.0f - draw_data->DisplayPos.x * scale[0],
 		-1.0f - draw_data->DisplayPos.y * scale[1]
 	};
-	vk.CmdPushConstants(cmd_list, _imgui_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(float) * 0, sizeof(float) * 2, scale);
-	vk.CmdPushConstants(cmd_list, _imgui_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(float) * 2, sizeof(float) * 2, translate);
+	vk.CmdPushConstants(cmd_list, _imgui.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(float) * 0, sizeof(float) * 2, scale);
+	vk.CmdPushConstants(cmd_list, _imgui.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(float) * 2, sizeof(float) * 2, translate);
 
 	VkDeviceSize vertex_offset = 0;
-	vk.CmdBindIndexBuffer(cmd_list, _imgui_index_buffer[buffer_index], 0, sizeof(ImDrawIdx) == 2 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32);
-	vk.CmdBindVertexBuffers(cmd_list, 0, 1, &_imgui_vertex_buffer[buffer_index], &vertex_offset);
+	vk.CmdBindIndexBuffer(cmd_list, _imgui.indices[buffer_index], 0, sizeof(ImDrawIdx) == 2 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32);
+	vk.CmdBindVertexBuffers(cmd_list, 0, 1, &_imgui.vertices[buffer_index], &vertex_offset);
 
 	// Set pipeline before binding viewport, since the pipelines has to enable dynamic viewport first
 	const VkViewport viewport = { 0.0f, 0.0f, draw_data->DisplaySize.x, draw_data->DisplaySize.y, 0.0f, 1.0f };
@@ -2141,14 +2142,14 @@ void reshade::vulkan::runtime_vk::render_imgui_draw_data(ImDrawData *draw_data)
 				write.dstBinding = 0;
 				write.descriptorCount = 1;
 				write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-				const VkDescriptorImageInfo image_info { _imgui_font_sampler, tex_data->view[0], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+				const VkDescriptorImageInfo image_info { _imgui.sampler, tex_data->view[0], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
 				write.pImageInfo = &image_info;
-				vk.CmdPushDescriptorSetKHR(cmd_list, VK_PIPELINE_BIND_POINT_GRAPHICS, _imgui_pipeline_layout, 0, 1, &write);
+				vk.CmdPushDescriptorSetKHR(cmd_list, VK_PIPELINE_BIND_POINT_GRAPHICS, _imgui.pipeline_layout, 0, 1, &write);
 			}
 			else
 			{
 				assert(tex_data->descriptor_set != VK_NULL_HANDLE);
-				vk.CmdBindDescriptorSets(cmd_list, VK_PIPELINE_BIND_POINT_GRAPHICS, _imgui_pipeline_layout, 0, 1, &tex_data->descriptor_set, 0, nullptr);
+				vk.CmdBindDescriptorSets(cmd_list, VK_PIPELINE_BIND_POINT_GRAPHICS, _imgui.pipeline_layout, 0, 1, &tex_data->descriptor_set, 0, nullptr);
 			}
 
 			vk.CmdDrawIndexed(cmd_list, cmd.ElemCount, 1, cmd.IdxOffset + idx_offset, cmd.VtxOffset + vtx_offset, 0);
@@ -2164,7 +2165,7 @@ void reshade::vulkan::runtime_vk::render_imgui_draw_data(ImDrawData *draw_data)
 #endif
 
 #if RESHADE_DEPTH
-void reshade::vulkan::runtime_vk::draw_depth_debug_menu()
+void reshade::vulkan::runtime_vk::draw_depth_debug_menu(buffer_detection_context &tracker)
 {
 	if (_has_high_network_activity)
 	{
@@ -2181,7 +2182,7 @@ void reshade::vulkan::runtime_vk::draw_depth_debug_menu()
 		ImGui::Separator();
 		ImGui::Spacing();
 
-		for (const auto &[depth_image, snapshot] : _current_tracker->depth_buffer_counters())
+		for (const auto &[depth_image, snapshot] : tracker.depth_buffer_counters())
 		{
 			char label[512] = "";
 			sprintf_s(label, "%s0x%016llx", (depth_image == _depth_image ? "> " : "  "), (uint64_t)depth_image);
@@ -2214,7 +2215,7 @@ void reshade::vulkan::runtime_vk::draw_depth_debug_menu()
 	}
 }
 
-void reshade::vulkan::runtime_vk::update_depthstencil_image(buffer_detection::depthstencil_info info)
+void reshade::vulkan::runtime_vk::update_depth_image_bindings(buffer_detection::depthstencil_info info)
 {
 	if (info.image == _depth_image)
 		return;
@@ -2237,16 +2238,6 @@ void reshade::vulkan::runtime_vk::update_depthstencil_image(buffer_detection::de
 	{
 		_depth_image_view = create_image_view(info.image, info.image_info.format, 1, VK_IMAGE_ASPECT_DEPTH_BIT);
 		image_binding.imageView = _depth_image_view;
-
-		for (auto &tex : _textures)
-		{
-			if (tex.impl != nullptr &&
-				tex.impl_reference == texture_reference::depth_buffer)
-			{
-				tex.width = frame_width();
-				tex.height = frame_height();
-			}
-		}
 
 		_has_depth_texture = true;
 	}

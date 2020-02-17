@@ -19,6 +19,16 @@
 
 #include "runtime.hpp"
 
+bool _preset_0 = false;
+bool _preset_1 = false;
+bool _preset_2 = false;
+bool _preset_3 = false;
+bool _preset_4 = false;
+
+bool _reset_values = false;
+bool _reset_vertices = false;
+bool _reset_drawcalls = false;
+
 bool _manual_reload = false;
 
 bool _enable_startup_delay = 1;
@@ -33,18 +43,11 @@ bool _enable_priority = 0;
 bool _enable_vertices = 0;
 bool _enable_drawcalls = 0;
 
-unsigned int _vertice_limit = 1500000;
 unsigned int vertMin = 1;
 unsigned int vertMax = 1500000;
 
-unsigned int _drawcall_limit = 1500000;
 unsigned int drawMin = 1;
 unsigned int drawMax = 1500000;
-
-bool _set_ResetVD = true;
-bool _set_ResetVertLimit = true;
-bool _set_ResetDrawLimit = true;
-bool _set_resetPriority = true;
 
 bool _reminder1;
 bool _reminder2;
@@ -131,7 +134,10 @@ reshade::d3d12::runtime_d3d12::runtime_d3d12(ID3D12Device *device, ID3D12Command
 	}
 
 #if RESHADE_GUI && RESHADE_DEPTH
-	subscribe_to_ui("DX12", [this]() { draw_depth_debug_menu(); });
+	subscribe_to_ui("DX12", [this]() {
+		assert(_buffer_detection != nullptr);
+		draw_depth_debug_menu(*_buffer_detection);
+	});
 #endif
 #if RESHADE_DEPTH
 	subscribe_to_load_config([this](const ini_file& config) {
@@ -148,7 +154,7 @@ reshade::d3d12::runtime_d3d12::runtime_d3d12(ID3D12Device *device, ID3D12Command
 		config.get("DX12_BUFFER_DETECTION", "1b. Startup Delay for ReShade (Default is 500 Frames)", _startupdelay);
 
 		config.get("DX12_BUFFER_DETECTION", "2a. Show Presets", _show_presets);
-		config.get("DX12_BUFFER_DETECTION", "2b. Disabled (0) - GW2 Preset (1) - B&S Preset (2) - Custom Preset (3)", _preset); /// Disabled=0, GW2=1, B&S=2, Custom=3
+		config.get("DX12_BUFFER_DETECTION", "2b. Disabled (0) - GW2 Preset (1) - B&S Preset (2) - Custom Preset (3) - Debug (4)", _preset);
 
 		config.get("DX12_BUFFER_DETECTION", "3a. Enable or Disable Vertices for Buffer Detection", _enable_vertices);
 		config.get("DX12_BUFFER_DETECTION", "3b. Enable or Disable Drawcalls for Buffer Detection", _enable_drawcalls);
@@ -185,7 +191,7 @@ reshade::d3d12::runtime_d3d12::runtime_d3d12(ID3D12Device *device, ID3D12Command
 		config.set("DX12_BUFFER_DETECTION", "1b. Startup Delay for ReShade (Default is 500 Frames)", _startupdelay);
 
 		config.set("DX12_BUFFER_DETECTION", "2a. Show Presets", _show_presets);
-		config.set("DX12_BUFFER_DETECTION", "2b. Disabled (0) - GW2 Preset (1) - B&S Preset (2) - Custom Preset (3)", _preset); /// Disabled=0, GW2=1, B&S=2, Custom=3
+		config.set("DX12_BUFFER_DETECTION", "2b. Disabled (0) - GW2 Preset (1) - B&S Preset (2) - Custom Preset (3) - Debug (4)", _preset);
 
 		config.set("DX12_BUFFER_DETECTION", "3a. Enable or Disable Vertices for Buffer Detection", _enable_vertices);
 		config.set("DX12_BUFFER_DETECTION", "3b. Enable or Disable Drawcalls for Buffer Detection", _enable_drawcalls);
@@ -330,12 +336,12 @@ bool reshade::d3d12::runtime_d3d12::on_init(const DXGI_SWAP_CHAIN_DESC &swap_des
 		clear_value.Format = desc.Format;
 		clear_value.DepthStencil = { 1.0f, 0x0 };
 
-		if (FAILED(_device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &clear_value, IID_PPV_ARGS(&_effect_depthstencil))))
+		if (FAILED(_device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &clear_value, IID_PPV_ARGS(&_effect_stencil))))
 			return false;
 #ifdef _DEBUG
-		_effect_depthstencil->SetName(L"ReShade Default Depth-Stencil");
+		_effect_stencil->SetName(L"ReShade Default Depth-Stencil");
 #endif
-		_device->CreateDepthStencilView(_effect_depthstencil.get(), nullptr, _depthstencil_dsvs->GetCPUDescriptorHandleForHeapStart());
+		_device->CreateDepthStencilView(_effect_stencil.get(), nullptr, _depthstencil_dsvs->GetCPUDescriptorHandleForHeapStart());
 	}
 
 	// Create mipmap generation states
@@ -411,40 +417,42 @@ void reshade::d3d12::runtime_d3d12::on_reset()
 	_backbuffers.clear();
 	_backbuffer_rtvs.reset();
 	_backbuffer_texture.reset();
-	_depth_texture.reset();
 	_depthstencil_dsvs.reset();
 
 	_mipmap_pipeline.reset();
 	_mipmap_signature.reset();
 
-	_effect_depthstencil.reset();
+	_effect_stencil.reset();
 
 #if RESHADE_GUI
+	_imgui.pipeline.reset();
+	_imgui.signature.reset();
+
 	for (unsigned int i = 0; i < NUM_IMGUI_BUFFERS; ++i)
 	{
-		_imgui_index_buffer[i].reset();
-		_imgui_index_buffer_size[i] = 0;
-		_imgui_vertex_buffer[i].reset();
-		_imgui_vertex_buffer_size[i] = 0;
+		_imgui.indices[i].reset();
+		_imgui.vertices[i].reset();
+		_imgui.num_indices[i] = 0;
+		_imgui.num_vertices[i] = 0;
 	}
-
-	_imgui_pipeline.reset();
-	_imgui_signature.reset();
 #endif
 
 #if RESHADE_DEPTH
+	_depth_texture.reset();
+
 	_has_depth_texture = false;
 	_depth_texture_override = nullptr;
 #endif
 }
 
-void reshade::d3d12::runtime_d3d12::on_present(buffer_detection_context &tracker)
+void reshade::d3d12::runtime_d3d12::on_present()
 {
 	if (!_is_initialized)
 		return;
 
-	_vertices = tracker.total_vertices();
-	_drawcalls = tracker.total_drawcalls();
+	assert(_buffer_detection != nullptr);
+	_vertices = _buffer_detection->total_vertices();
+	_drawcalls = _buffer_detection->total_drawcalls();
 
 	// There is no swap chain for d3d12on7
 	if (_swapchain != nullptr)
@@ -461,15 +469,9 @@ void reshade::d3d12::runtime_d3d12::on_present(buffer_detection_context &tracker
 	_cmd_alloc[_swap_index]->Reset();
 
 #if RESHADE_DEPTH
-	_current_tracker = &tracker;
 	assert(_depth_clear_index_override != 0);
-	if (_preset == 2)
-	{
-		update_depthstencil_texture(nullptr);				// Completely Disables grabbing buffer information.
-	}
-	else
-	update_depthstencil_texture(_has_high_network_activity ? nullptr :
-		tracker.find_best_depth_texture(_commandqueue.get(), _filter_aspect_ratio ? _width : 0, _height, _depth_texture_override, _preserve_depth_buffers ? _depth_clear_index_override : 0));
+	update_depth_texture_bindings(_has_high_network_activity ? nullptr :
+		_buffer_detection->find_best_depth_texture(_commandqueue.get(), _filter_aspect_ratio ? _width : 0, _height, _depth_texture_override, _preserve_depth_buffers ? _depth_clear_index_override : 0));
 #endif
 
 	update_and_render_effects();
@@ -706,6 +708,9 @@ bool reshade::d3d12::runtime_d3d12::init_effect(size_t index)
 			return false;
 		}
 
+		D3D12_CPU_DESCRIPTOR_HANDLE srv_handle = effect_data.srv_cpu_base;
+		srv_handle.ptr += info.texture_binding * _srv_handle_size;
+
 		const auto existing_texture = std::find_if(_textures.begin(), _textures.end(),
 			[&texture_name = info.texture_name](const auto &item) {
 			return item.unique_name == texture_name && item.impl != nullptr;
@@ -719,7 +724,11 @@ bool reshade::d3d12::runtime_d3d12::init_effect(size_t index)
 			resource = _backbuffer_texture;
 			break;
 		case texture_reference::depth_buffer:
-			resource = _depth_texture;
+#if RESHADE_DEPTH
+			resource = _depth_texture; // Note: This may be null
+#endif
+			// Keep track of the depth buffer texture descriptor to simplify updating it
+			effect_data.depth_texture_binding = srv_handle;
 			break;
 		default:
 			resource = static_cast<d3d12_tex_data *>(existing_texture->impl)->resource;
@@ -736,14 +745,7 @@ bool reshade::d3d12::runtime_d3d12::init_effect(size_t index)
 			desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 			desc.Texture2D.MipLevels = existing_texture->levels;
 
-			D3D12_CPU_DESCRIPTOR_HANDLE srv_handle = effect_data.srv_cpu_base;
-			srv_handle.ptr += info.texture_binding * _srv_handle_size;
-
 			_device->CreateShaderResourceView(resource.get(), &desc, srv_handle);
-
-			// Keep track of the depth buffer texture descriptor to simplify updating it
-			if (existing_texture->impl_reference == texture_reference::depth_buffer)
-				effect_data.depth_texture_binding = srv_handle;
 		}
 
 		// Only initialize sampler if it has not been created before
@@ -825,10 +827,10 @@ bool reshade::d3d12::runtime_d3d12::init_effect(size_t index)
 				rtv_handle.ptr += _rtv_handle_size;
 			}
 
-			if (pass_info.viewport_width == 0)
+			if (pass_info.render_target_names[0].empty())
 			{
-				pass_info.viewport_width = frame_width();
-				pass_info.viewport_height = frame_height();
+				pass_info.viewport_width = _width;
+				pass_info.viewport_height = _height;
 			}
 
 			pso_desc.NodeMask = 1;
@@ -1422,11 +1424,11 @@ bool reshade::d3d12::runtime_d3d12::init_imgui_resources()
 		desc.pStaticSamplers = samplers;
 		desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
-		_imgui_signature = create_root_signature(desc);
+		_imgui.signature = create_root_signature(desc);
 	}
 
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC pso_desc = {};
-	pso_desc.pRootSignature = _imgui_signature.get();
+	pso_desc.pRootSignature = _imgui.signature.get();
 	pso_desc.SampleMask = UINT_MAX;
 	pso_desc.NumRenderTargets = 1;
 	pso_desc.RTVFormats[0] = _backbuffer_format;
@@ -1470,7 +1472,7 @@ bool reshade::d3d12::runtime_d3d12::init_imgui_resources()
 		desc.StencilEnable = false;
 	}
 
-	return SUCCEEDED(_device->CreateGraphicsPipelineState(&pso_desc, IID_PPV_ARGS(&_imgui_pipeline)));
+	return SUCCEEDED(_device->CreateGraphicsPipelineState(&pso_desc, IID_PPV_ARGS(&_imgui.pipeline)));
 }
 
 void reshade::d3d12::runtime_d3d12::render_imgui_draw_data(ImDrawData *draw_data)
@@ -1479,11 +1481,11 @@ void reshade::d3d12::runtime_d3d12::render_imgui_draw_data(ImDrawData *draw_data
 	const unsigned int buffer_index = _framecount % NUM_IMGUI_BUFFERS;
 
 	// Create and grow vertex/index buffers if needed
-	if (_imgui_index_buffer_size[buffer_index] < draw_data->TotalIdxCount)
+	if (_imgui.num_indices[buffer_index] < draw_data->TotalIdxCount)
 	{
 		wait_for_command_queue(); // Be safe and ensure nothing still uses this buffer
 
-		_imgui_index_buffer[buffer_index].reset();
+		_imgui.indices[buffer_index].reset();
 
 		const int new_size = draw_data->TotalIdxCount + 10000;
 		D3D12_RESOURCE_DESC desc = { D3D12_RESOURCE_DIMENSION_BUFFER };
@@ -1495,18 +1497,18 @@ void reshade::d3d12::runtime_d3d12::render_imgui_draw_data(ImDrawData *draw_data
 		desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 		D3D12_HEAP_PROPERTIES props = { D3D12_HEAP_TYPE_UPLOAD };
 
-		if (FAILED(_device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, NULL, IID_PPV_ARGS(&_imgui_index_buffer[buffer_index]))))
+		if (FAILED(_device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, NULL, IID_PPV_ARGS(&_imgui.indices[buffer_index]))))
 			return;
 #ifdef _DEBUG
-		_imgui_index_buffer[buffer_index]->SetName(L"ImGui Index Buffer");
+		_imgui.indices[buffer_index]->SetName(L"ImGui Index Buffer");
 #endif
-		_imgui_index_buffer_size[buffer_index] = new_size;
+		_imgui.num_indices[buffer_index] = new_size;
 	}
-	if (_imgui_vertex_buffer_size[buffer_index] < draw_data->TotalVtxCount)
+	if (_imgui.num_vertices[buffer_index] < draw_data->TotalVtxCount)
 	{
 		wait_for_command_queue();
 
-		_imgui_vertex_buffer[buffer_index].reset();
+		_imgui.vertices[buffer_index].reset();
 
 		const int new_size = draw_data->TotalVtxCount + 5000;
 		D3D12_RESOURCE_DESC desc = { D3D12_RESOURCE_DIMENSION_BUFFER };
@@ -1518,16 +1520,16 @@ void reshade::d3d12::runtime_d3d12::render_imgui_draw_data(ImDrawData *draw_data
 		desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 		D3D12_HEAP_PROPERTIES props = { D3D12_HEAP_TYPE_UPLOAD };
 
-		if (FAILED(_device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, NULL, IID_PPV_ARGS(&_imgui_vertex_buffer[buffer_index]))))
+		if (FAILED(_device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, NULL, IID_PPV_ARGS(&_imgui.vertices[buffer_index]))))
 			return;
 #ifdef _DEBUG
-		_imgui_index_buffer[buffer_index]->SetName(L"ImGui Vertex Buffer");
+		_imgui.vertices[buffer_index]->SetName(L"ImGui Vertex Buffer");
 #endif
-		_imgui_vertex_buffer_size[buffer_index] = new_size;
+		_imgui.num_vertices[buffer_index] = new_size;
 	}
 
 	if (ImDrawIdx *idx_dst;
-		SUCCEEDED(_imgui_index_buffer[buffer_index]->Map(0, nullptr, reinterpret_cast<void **>(&idx_dst))))
+		SUCCEEDED(_imgui.indices[buffer_index]->Map(0, nullptr, reinterpret_cast<void **>(&idx_dst))))
 	{
 		for (int n = 0; n < draw_data->CmdListsCount; ++n)
 		{
@@ -1536,10 +1538,10 @@ void reshade::d3d12::runtime_d3d12::render_imgui_draw_data(ImDrawData *draw_data
 			idx_dst += draw_list->IdxBuffer.Size;
 		}
 
-		_imgui_index_buffer[buffer_index]->Unmap(0, nullptr);
+		_imgui.indices[buffer_index]->Unmap(0, nullptr);
 	}
 	if (ImDrawVert *vtx_dst;
-		SUCCEEDED(_imgui_vertex_buffer[buffer_index]->Map(0, nullptr, reinterpret_cast<void **>(&vtx_dst))))
+		SUCCEEDED(_imgui.vertices[buffer_index]->Map(0, nullptr, reinterpret_cast<void **>(&vtx_dst))))
 	{
 		for (int n = 0; n < draw_data->CmdListsCount; ++n)
 		{
@@ -1548,10 +1550,10 @@ void reshade::d3d12::runtime_d3d12::render_imgui_draw_data(ImDrawData *draw_data
 			vtx_dst += draw_list->VtxBuffer.Size;
 		}
 
-		_imgui_vertex_buffer[buffer_index]->Unmap(0, nullptr);
+		_imgui.vertices[buffer_index]->Unmap(0, nullptr);
 	}
 
-	if (!begin_command_list(_imgui_pipeline))
+	if (!begin_command_list(_imgui.pipeline))
 		return;
 
 	// Transition render target
@@ -1568,13 +1570,13 @@ void reshade::d3d12::runtime_d3d12::render_imgui_draw_data(ImDrawData *draw_data
 
 	// Setup render state and render draw lists
 	const D3D12_INDEX_BUFFER_VIEW index_buffer_view = {
-		_imgui_index_buffer[buffer_index]->GetGPUVirtualAddress(), _imgui_index_buffer_size[buffer_index] * sizeof(ImDrawIdx), sizeof(ImDrawIdx) == 2 ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT };
+		_imgui.indices[buffer_index]->GetGPUVirtualAddress(), _imgui.num_indices[buffer_index] * sizeof(ImDrawIdx), sizeof(ImDrawIdx) == 2 ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT };
 	_cmd_list->IASetIndexBuffer(&index_buffer_view);
 	const D3D12_VERTEX_BUFFER_VIEW vertex_buffer_view = {
-		_imgui_vertex_buffer[buffer_index]->GetGPUVirtualAddress(), _imgui_vertex_buffer_size[buffer_index] * sizeof(ImDrawVert),  sizeof(ImDrawVert) };
+		_imgui.vertices[buffer_index]->GetGPUVirtualAddress(), _imgui.num_vertices[buffer_index] * sizeof(ImDrawVert),  sizeof(ImDrawVert) };
 	_cmd_list->IASetVertexBuffers(0, 1, &vertex_buffer_view);
 	_cmd_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	_cmd_list->SetGraphicsRootSignature(_imgui_signature.get());
+	_cmd_list->SetGraphicsRootSignature(_imgui.signature.get());
 	_cmd_list->SetGraphicsRoot32BitConstants(0, sizeof(ortho_projection) / 4, ortho_projection, 0);
 	const D3D12_VIEWPORT viewport = { 0, 0, draw_data->DisplaySize.x, draw_data->DisplaySize.y, 0.0f, 1.0f };
 	_cmd_list->RSSetViewports(1, &viewport);
@@ -1628,12 +1630,10 @@ void reshade::d3d12::runtime_d3d12::render_imgui_draw_data(ImDrawData *draw_data
 #endif
 
 #if RESHADE_DEPTH
-void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu()
+void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu(buffer_detection_context &tracker)
 {
 	if (ImGui::CollapsingHeader("Depth Buffers", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		assert(_current_tracker != nullptr);
-
 		bool save = false;
 		bool modified = false;
 		bool _set_SaveAndReload = false;
@@ -1653,8 +1653,9 @@ void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu()
 		modified |= ImGui::Checkbox("Use Aspect Ratio Heuristics", &_filter_aspect_ratio);			//Toggles Aspect Ratio Heuristic Detection for Buffer Selection
 		ImGui::NewLine();	
 
-		if (modified)																				// Detection settings have changed, reset heuristic
-			_current_tracker->reset(false);
+		if (modified) // Detection settings have changed, reset heuristic
+			// Do not release resources here, as they may still be in use on the device
+			tracker.reset(false);
 
 		save |= ImGui::Checkbox("Show Presets", &_show_presets);									//Shows or Hides Preset Selections
 		ImGui::NewLine();
@@ -1666,14 +1667,35 @@ void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu()
 			_set_SaveAndReload |= ImGui::RadioButton("Disabled", &_preset, 0); ImGui::NewLine();		//Resets & Disables all Buffers, prevents crashing from erroneous autoselect.
 			_set_SaveAndReload |= ImGui::RadioButton("Guild Wars 2", &_preset, 1); ImGui::NewLine();	//Guild Wars 2 default settings.
 			_set_SaveAndReload |= ImGui::RadioButton("Blade&Soul", &_preset, 2); ImGui::NewLine();		//Blade&Soul default settings. (Disabled)
+			_set_SaveAndReload |= ImGui::RadioButton("Debug", &_preset, 4); ImGui::NewLine();			//Doesn't apply buffers.
 			_set_SaveAndReload |= ImGui::RadioButton("Use Custom Settings", &_preset, 3);				//Enables Custom Config settings.
 			ImGui::NewLine();
 			ImGui::Separator();
 			ImGui::NewLine();
 		}
 
-		if (_preset == 3)							// Custom Configuration
+		if (_preset == 3)		// Custom Configuration
 		{
+			_reset_drawcalls = false;
+			_reset_vertices = false;
+
+			if (_reset_values == true)
+			{
+				_priority = 0;
+				_enable_priority = 0;
+				_enable_vertices = false;
+				_enable_drawcalls = false;
+				_vertice_limit = 800000;
+				_drawcall_limit = 800000;
+				_reset_values = false;
+			}
+
+			_preset_0 = false;
+			_preset_1 = false;
+			_preset_2 = false;
+			_preset_3 = true;
+			_preset_4 = false;
+
 			if (_set_SaveAndReload == true)
 			{
 				_set_SaveAndReload = false;
@@ -1683,54 +1705,14 @@ void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu()
 				_manual_reload = false;
 			}
 
-			if (_set_ResetVD == true)				// If another preset was selected prior...
-			{
-				_enable_vertices = false;			// Reset the Vertices checkbox.
-				_enable_drawcalls = false;			// Reset the Drawcalls checkbox.
-				_vertice_limit = 550000;			// Reset the Vertice Limit.
-				_drawcall_limit = 550000;			// Reset the Drawcall Limit.
-				_set_ResetVD = false;				// Set the flag where this will only run once, until another preset is seleted once again.
-			}
-
-			ImGui::NewLine();
 			save |= ImGui::Checkbox("Use Vertices in Buffer Selection", &_enable_vertices);ImGui::NewLine();	//Allows Vertices to be above 0 so Buffers will see them.
 			save |= ImGui::Checkbox("Use Drawcalls in Buffer Selection", &_enable_drawcalls);					//Allows Drawcalls to be above 0 so Buffers will see them.
 			ImGui::NewLine();
 			ImGui::Separator();
 			ImGui::NewLine();
 
-			if (_enable_vertices == false)			//If checkbox was unset...
-			{
-				if (_set_ResetVertLimit == true)	//Check if checkbox or other preset was used or not beforehand.
-				{
-					_vertice_limit = 550000;		//If either return true, reset vert limit.
-					_set_ResetVertLimit = false;	//Disables check to avoid running more than once.
-				}
-				if (_set_resetPriority == true)
-				{
-					_enable_priority = 0;
-					_set_resetPriority = false;
-				}
-			}
-
-			if (_enable_drawcalls == false)			//If checkbox was unset...
-			{
-				if (_set_ResetDrawLimit == true)	//Check if checkbox or other preset was used or not beforehand.
-				{
-					_drawcall_limit = 550000;		//If either return true, reset drawcall limit.
-					_set_ResetDrawLimit = false;	//Disables check to avoid running more than once.
-				}
-				if (_set_resetPriority == true)		
-				{
-					_enable_priority = 0;
-					_set_resetPriority = false;
-				}
-			}
-
 			if (_enable_vertices == 1 && _enable_drawcalls == 1)
 			{
-				_set_ResetVertLimit = true;																		//Enables logic check again to reset vertice limit.
-				_set_ResetDrawLimit = true;																		//Enables logic check again to reset drawcall limit.	
 
 				ImGui::TextUnformatted("Lowest Amount to be Recognized:"); ImGui::NewLine();
 				save |= ImGui::SliderScalar("- Vertices", ImGuiDataType_U32, &_vertice_limit, &vertMin, &vertMax);		//Vertice Slider in UINT, min & max at the top of this .CPP
@@ -1746,8 +1728,6 @@ void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu()
 
 				if (_enable_priority == 1)
 				{
-					_set_resetPriority = true;
-
 					save |= ImGui::RadioButton("Prioritize Vertices", &_priority, 1); ImGui::NewLine();					//Prioritizes Vertices.
 					save |= ImGui::RadioButton("Prioritize Drawcalls", &_priority, 2); ImGui::NewLine();				//Prioritizes Drawcalls.
 					ImGui::TextUnformatted("* Info: Will ignore the alternative."); ImGui::NewLine();
@@ -1761,7 +1741,7 @@ void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu()
 			}
 			else if (_enable_vertices == 1 && _enable_drawcalls == 0)
 			{
-				_set_ResetVertLimit = true;
+				_reset_drawcalls = true;
 
 				ImGui::TextUnformatted("Lowest Amount to be Recognized:"); ImGui::NewLine();
 				save |= ImGui::SliderScalar("- Vertices", ImGuiDataType_U32, &_vertice_limit, &vertMin, &vertMax);		//Vertice Slider in UINT, min & max at the top of this .CPP
@@ -1770,7 +1750,7 @@ void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu()
 			}
 			else if (_enable_drawcalls == 1 && _enable_vertices == 0)
 			{
-				_set_ResetDrawLimit = true;
+				_reset_vertices = true;
 
 				ImGui::TextUnformatted("Lowest to be Recognized:"); ImGui::NewLine();
 				save |= ImGui::SliderScalar("- Drawcalls", ImGuiDataType_U32, &_drawcall_limit, &drawMin, &drawMax);	//Drawcall Slider in UINT, min & max at the top of this .CPP
@@ -1781,6 +1761,14 @@ void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu()
 		}
 		else if (_preset == 0) //Disabled Values	//Disables depth_stencil_texture usage on Line 467
 		{
+
+		_reset_values = true;
+
+		_preset_0 = true;
+		_preset_1 = false;
+		_preset_2 = false;
+		_preset_3 = false;
+		_preset_4 = false;
 
 			if (_set_SaveAndReload == true)
 			{
@@ -1796,17 +1784,17 @@ void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu()
 
 			_enable_priority = 0;					//Default - Priority set to unused.
 			_priority = 0;							//Default - Priority status set to disabled.
-
-			_vertice_limit = 1500000;				//Default - Sets vert limits to 0.
-			_drawcall_limit = 1500000;				//Default - Sets draw limits to 0.
-
-			_set_ResetVD = true;				
-			_set_ResetVertLimit = true;			
-			_set_ResetDrawLimit = true;
-			_set_resetPriority = true;
 		}
 		else if (_preset == 1) //Guild Wars 2 Defaults
 		{
+
+		_reset_values = true;
+
+		_preset_0 = false;
+		_preset_1 = true;
+		_preset_2 = false;
+		_preset_3 = false;
+		_preset_4 = false;
 
 			if (_set_SaveAndReload == true)
 			{
@@ -1822,17 +1810,17 @@ void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu()
 
 			_enable_priority = 1;					//Enables priority
 			_priority = 1;							//Prioritizes Vertices
-
-			_vertice_limit = 550000;				//Buffers with less than 550,000 will be set to 0.
-			_drawcall_limit = 550000;				//Sets all Drawcalls to 0.
-
-			_set_ResetVD = true;
-			_set_ResetVertLimit = true;
-			_set_ResetDrawLimit = true;
-			_set_resetPriority = true;
 		}
-		else if (_preset == 2) //Blade&Soul Defaults //Disables depth_stencil_texture usage on Line 467
+		else if (_preset == 2) //Blade&Soul Defaults //467
 		{
+
+		_reset_values = true;
+
+		_preset_0 = false;
+		_preset_1 = false;
+		_preset_2 = true;
+		_preset_3 = false;
+		_preset_4 = false;
 
 			if (_set_SaveAndReload == true)
 			{
@@ -1848,14 +1836,32 @@ void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu()
 
 			_enable_priority = 0;					 //Priority enabled
 			_priority = 0;							 //Priority to vertices
+		}
+		else if (_preset == 4) //Debug
+		{
 
-			_vertice_limit = 550000;				 //Ignore up to this amount to avoid UI elements.
-			_drawcall_limit = 550000;				 //Ignore all.
+		_reset_values = true;
 
-			_set_ResetVD = true;
-			_set_ResetVertLimit = true;
-			_set_ResetDrawLimit = true;
-			_set_resetPriority = true;
+		_preset_0 = false;
+		_preset_1 = false;
+		_preset_2 = false;
+		_preset_3 = false;
+		_preset_4 = true;
+
+			if (_set_SaveAndReload == true)
+			{
+				_set_SaveAndReload = false;
+				runtime::save_config();
+				_manual_reload = true;
+				runtime::load_effects();
+				_manual_reload = false;
+			}
+
+			_enable_vertices = 1;					 //Enables vertices
+			_enable_drawcalls = 1;					 //Disables drawcalls
+
+			_enable_priority = 0;					 //Priority enabled
+			_priority = 0;							 //Priority to vertices
 		}
 
 		ImGui::NewLine();
@@ -1863,10 +1869,10 @@ void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu()
 		ImGui::Separator();
 		ImGui::Spacing();
 
-		for (const auto &[dsv_texture, snapshot] : _current_tracker->depth_buffer_counters())
+		for (const auto &[dsv_texture, snapshot] : tracker.depth_buffer_counters())
 		{
 			char label[512] = "";
-			sprintf_s(label, "%s0x%p", (dsv_texture == _depth_texture || dsv_texture == _current_tracker->current_depth_texture() ? "> " : "  "), dsv_texture.get());
+			sprintf_s(label, "%s0x%p", (dsv_texture == _depth_texture || dsv_texture == tracker.current_depth_texture() ? "> " : "  "), dsv_texture.get());
 
 			const D3D12_RESOURCE_DESC desc = dsv_texture->GetDesc();
 
@@ -1891,7 +1897,24 @@ void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu()
 				_manual_reload = false;
 			}
 
-			if (_enable_vertices == 0 && _enable_drawcalls == 0)
+			if (_preset == 0)
+			{
+				ImGui::SameLine();
+				ImGui::Text("| [Drawcalls Disabled]  &  [Vertices Disabled] |");
+			}
+			else if (_preset == 1)
+			{
+				ImGui::SameLine();
+				ImGui::Text("| %8u (Vertices) <==  ~ %5u [Drawcalls Ignored] |",
+					snapshot.total_stats.vertices, snapshot.total_stats.drawcalls);
+			}
+			else if (_preset == 4)
+			{
+				ImGui::SameLine();
+				ImGui::Text("| %5u Drawcalls  <Debug>  %8u Vertices |",
+					snapshot.total_stats.drawcalls, snapshot.total_stats.vertices);
+			}
+			else if (_enable_vertices == 0 && _enable_drawcalls == 0)
 			{
 				ImGui::SameLine();
 				ImGui::Text("| [Drawcalls Disabled]  &  [Vertices Disabled] |",
@@ -1928,11 +1951,11 @@ void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu()
 					snapshot.total_stats.drawcalls);
 			}
 
-			if (_preserve_depth_buffers && dsv_texture == _current_tracker->current_depth_texture())
+			if (_preserve_depth_buffers && dsv_texture == tracker.current_depth_texture())
 			{
 				for (UINT clear_index = 1; clear_index <= snapshot.clears.size(); ++clear_index)
 				{
-					sprintf_s(label, "%s  CLEAR %2u", (clear_index == _current_tracker->current_clear_index() ? "> " : "  "), clear_index);
+					sprintf_s(label, "%s  CLEAR %2u", (clear_index == tracker.current_clear_index() ? "> " : "  "), clear_index);
 
 					if (bool value = (_depth_clear_index_override == clear_index);
 						ImGui::Checkbox(label, &value))
@@ -1940,6 +1963,11 @@ void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu()
 						_depth_clear_index_override = value ? clear_index : std::numeric_limits<UINT>::max();
 						modified = true;
 					}
+
+					ImGui::SameLine();
+					ImGui::Text("%*s|           | %5u draw calls ==> %8u vertices |",
+						sizeof(dsv_texture.get()) == 8 ? 8 : 0, "", // Add space to fill pointer length
+						snapshot.clears[clear_index - 1].drawcalls, snapshot.clears[clear_index - 1].vertices);
 				}
 			}
 
@@ -1962,7 +1990,7 @@ void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu()
 	}
 }
 
-void reshade::d3d12::runtime_d3d12::update_depthstencil_texture(com_ptr<ID3D12Resource> texture)
+void reshade::d3d12::runtime_d3d12::update_depth_texture_bindings(com_ptr<ID3D12Resource> texture)
 {
 	if (texture == _depth_texture)
 		return;
@@ -1973,16 +2001,6 @@ void reshade::d3d12::runtime_d3d12::update_depthstencil_texture(com_ptr<ID3D12Re
 
 	if (_depth_texture != nullptr)
 	{
-		for (auto &tex : _textures)
-		{
-			if (tex.impl != nullptr &&
-				tex.impl_reference == texture_reference::depth_buffer)
-			{
-				tex.width = frame_width();
-				tex.height = frame_height();
-			}
-		}
-
 		const D3D12_RESOURCE_DESC desc = _depth_texture->GetDesc();
 
 		view_desc.Format = make_dxgi_format_normal(desc.Format);

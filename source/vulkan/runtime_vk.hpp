@@ -18,11 +18,6 @@ namespace reshade::vulkan
 {
 	class runtime_vk : public runtime
 	{
-		friend struct vulkan_tex_data;
-		friend struct vulkan_technique_data;
-		friend struct vulkan_pass_data;
-		friend struct vulkan_effect_data;
-
 		static const uint32_t NUM_IMGUI_BUFFERS = 5;
 		static const uint32_t NUM_COMMAND_FRAMES = 5;
 
@@ -32,11 +27,12 @@ namespace reshade::vulkan
 
 		bool on_init(VkSwapchainKHR swapchain, const VkSwapchainCreateInfoKHR &desc, HWND hwnd);
 		void on_reset();
-		void on_present(uint32_t swapchain_image_index, const VkSemaphore *wait, uint32_t num_wait, VkSemaphore &signal, buffer_detection_context &tracker);
+		void on_present(uint32_t swapchain_image_index, const VkSemaphore *wait, uint32_t num_wait, VkSemaphore &signal);
 
 		bool capture_screenshot(uint8_t *buffer) const override;
 
 		const VkLayerDispatchTable vk;
+		buffer_detection_context *_buffer_detection = nullptr;
 
 	private:
 		bool init_effect(size_t index) override;
@@ -67,7 +63,7 @@ namespace reshade::vulkan
 		VmaAllocator _alloc = VK_NULL_HANDLE;
 		const VkDevice _device;
 		VkQueue _queue = VK_NULL_HANDLE;
-		uint32_t _queue_family_index = 0; // Default to first queue family index
+		const uint32_t _queue_family_index;
 		VkPhysicalDeviceProperties _device_props = {};
 		VkPhysicalDeviceMemoryProperties _memory_props = {};
 
@@ -94,31 +90,35 @@ namespace reshade::vulkan
 		VkImage _effect_stencil = VK_NULL_HANDLE;
 		VkFormat _effect_stencil_format = VK_FORMAT_UNDEFINED;
 		VkImageView _effect_stencil_view = VK_NULL_HANDLE;
+		std::vector<struct vulkan_effect_data> _effect_data;
 		VkDescriptorPool _effect_descriptor_pool = VK_NULL_HANDLE;
 		VkDescriptorSetLayout _effect_descriptor_layout = VK_NULL_HANDLE;
-		std::vector<vulkan_effect_data> _effect_data;
 		std::unordered_map<size_t, VkSampler> _effect_sampler_states;
 
 #if RESHADE_GUI
 		bool init_imgui_resources();
 		void render_imgui_draw_data(ImDrawData *draw_data) override;
 
-		VkBuffer _imgui_index_buffer[NUM_IMGUI_BUFFERS] = {};
-		VkDeviceSize _imgui_index_buffer_size[NUM_IMGUI_BUFFERS] = {};
-		VmaAllocation _imgui_index_mem[NUM_IMGUI_BUFFERS] = {};
-		VkBuffer _imgui_vertex_buffer[NUM_IMGUI_BUFFERS] = {};
-		VkDeviceSize _imgui_vertex_buffer_size[NUM_IMGUI_BUFFERS] = {};
-		VmaAllocation _imgui_vertex_mem[NUM_IMGUI_BUFFERS] = {};
-		VkSampler _imgui_font_sampler = VK_NULL_HANDLE;
-		VkPipeline _imgui_pipeline = VK_NULL_HANDLE;
-		VkPipelineLayout _imgui_pipeline_layout = VK_NULL_HANDLE;
-		VkDescriptorPool _imgui_descriptor_pool = VK_NULL_HANDLE;
-		VkDescriptorSetLayout _imgui_descriptor_set_layout = VK_NULL_HANDLE;
+		struct imgui_resources
+		{
+			VkSampler sampler = VK_NULL_HANDLE;
+			VkPipeline pipeline = VK_NULL_HANDLE;
+			VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
+			VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
+			VkDescriptorSetLayout descriptor_layout = VK_NULL_HANDLE;
+
+			VkBuffer indices[NUM_IMGUI_BUFFERS] = {};
+			VkBuffer vertices[NUM_IMGUI_BUFFERS] = {};
+			VmaAllocation indices_mem[NUM_IMGUI_BUFFERS] = {};
+			VmaAllocation vertices_mem[NUM_IMGUI_BUFFERS] = {};
+			int num_indices[NUM_IMGUI_BUFFERS] = {};
+			int num_vertices[NUM_IMGUI_BUFFERS] = {};
+		} _imgui;
 #endif
 
 #if RESHADE_DEPTH
-		void draw_depth_debug_menu();
-		void update_depthstencil_image(buffer_detection::depthstencil_info info);
+		void draw_depth_debug_menu(buffer_detection_context &tracker);
+		void update_depth_image_bindings(buffer_detection::depthstencil_info info);
 
 		bool _use_aspect_ratio_heuristics = true;
 		VkImage _depth_image = VK_NULL_HANDLE;
@@ -126,7 +126,6 @@ namespace reshade::vulkan
 		VkImageView _depth_image_view = VK_NULL_HANDLE;
 		VkImageLayout _depth_image_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 		VkImageAspectFlags _depth_image_aspect = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-		buffer_detection_context *_current_tracker = nullptr;
 #endif
 	};
 }

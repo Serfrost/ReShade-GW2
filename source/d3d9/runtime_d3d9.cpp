@@ -67,7 +67,10 @@ reshade::d3d9::runtime_d3d9::runtime_d3d9(IDirect3DDevice9 *device, IDirect3DSwa
 	_behavior_flags = creation_params.BehaviorFlags;
 
 #if RESHADE_GUI && RESHADE_DEPTH
-	subscribe_to_ui("DX9", [this]() { draw_depth_debug_menu(); });
+	subscribe_to_ui("DX9", [this]() {
+		assert(_buffer_detection != nullptr);
+		draw_depth_debug_menu(*_buffer_detection);
+	});
 #endif
 #if RESHADE_DEPTH
 	subscribe_to_load_config([this](const ini_file &config) {
@@ -138,7 +141,7 @@ bool reshade::d3d9::runtime_d3d9::on_init(const D3DPRESENT_PARAMETERS &pp)
 	assert(SUCCEEDED(hr));
 
 	// Create effect depth-stencil surface
-	if (FAILED(_device->CreateDepthStencilSurface(_width, _height, D3DFMT_D24S8, D3DMULTISAMPLE_NONE, 0, FALSE, &_effect_depthstencil, nullptr)))
+	if (FAILED(_device->CreateDepthStencilSurface(_width, _height, D3DFMT_D24S8, D3DMULTISAMPLE_NONE, 0, FALSE, &_effect_stencil, nullptr)))
 		return false;
 
 	// Create vertex layout for vertex buffer which holds vertex indices
@@ -171,43 +174,44 @@ void reshade::d3d9::runtime_d3d9::on_reset()
 	_backbuffer_resolved.reset();
 	_backbuffer_texture.reset();
 	_backbuffer_texture_surface.reset();
-	_depthstencil.reset();
-	_depthstencil_texture.reset();
 
 	_max_vertices = 0;
-	_effect_depthstencil.reset();
+	_effect_stencil.reset();
 	_effect_vertex_buffer.reset();
 	_effect_vertex_layout.reset();
 
 #if RESHADE_GUI
-	_imgui_state.reset();
-	_imgui_index_buffer.reset();
-	_imgui_vertex_buffer.reset();
-	_imgui_index_buffer_size = 0;
-	_imgui_vertex_buffer_size = 0;
+	_imgui.state.reset();
+	_imgui.indices.reset();
+	_imgui.vertices.reset();
+	_imgui.num_indices = 0;
+	_imgui.num_vertices = 0;
 #endif
 
 #if RESHADE_DEPTH
+	_depth_texture.reset();
+	_depth_surface.reset();
+
 	_has_depth_texture = false;
-	_depthstencil_override = nullptr;
+	_depth_surface_override = nullptr;
 #endif
 }
 
-void reshade::d3d9::runtime_d3d9::on_present(buffer_detection &tracker)
+void reshade::d3d9::runtime_d3d9::on_present()
 {
 	if (!_is_initialized || FAILED(_device->BeginScene()))
 		return;
 
-	_vertices = tracker.total_vertices();
-	_drawcalls = tracker.total_drawcalls();
+	assert(_buffer_detection != nullptr);
+	_vertices = _buffer_detection->total_vertices();
+	_drawcalls = _buffer_detection->total_drawcalls();
 
 #if RESHADE_DEPTH
-	_current_tracker = &tracker;
-	tracker.disable_intz = _disable_intz;
+	_buffer_detection->disable_intz = _disable_intz;
 
 	assert(_depth_clear_index_override != 0);
-	update_depthstencil_texture(_has_high_network_activity ? nullptr :
-		tracker.find_best_depth_surface(_filter_aspect_ratio ? _width : 0, _height, _depthstencil_override, _preserve_depth_buffers ? _depth_clear_index_override : 0));
+	update_depth_texture_bindings(_has_high_network_activity ? nullptr :
+		_buffer_detection->find_best_depth_surface(_filter_aspect_ratio ? _width : 0, _height, _depth_surface_override, _preserve_depth_buffers ? _depth_clear_index_override : 0));
 #endif
 
 	_app_state.capture();
@@ -234,10 +238,10 @@ void reshade::d3d9::runtime_d3d9::on_present(buffer_detection &tracker)
 
 #if RESHADE_DEPTH
 	// Can only reset the tracker after the state block has been applied, to ensure current depth-stencil binding is updated correctly
-	if (_reset_tracker)
+	if (_reset_buffer_detection)
 	{
-		tracker.reset(true);
-		_reset_tracker = false;
+		_buffer_detection->reset(true);
+		_reset_buffer_detection = false;
 	}
 #endif
 
@@ -660,8 +664,10 @@ bool reshade::d3d9::runtime_d3d9::init_texture(texture &texture)
 		impl->surface = _backbuffer_texture_surface;
 		return true;
 	case texture_reference::depth_buffer:
-		impl->texture = _depthstencil_texture;
-		impl->surface = _depthstencil;
+#if RESHADE_DEPTH
+		impl->texture = _depth_texture;
+		impl->surface = _depth_surface;
+#endif
 		return true;
 	}
 
@@ -865,7 +871,7 @@ void reshade::d3d9::runtime_d3d9::render_technique(technique &technique)
 
 		D3DVIEWPORT9 viewport;
 		_device->GetViewport(&viewport);
-		_device->SetDepthStencilSurface(viewport.Width == _width && viewport.Height == _height && pass_info.stencil_enable ? _effect_depthstencil.get() : nullptr);
+		_device->SetDepthStencilSurface(viewport.Width == _width && viewport.Height == _height && pass_info.stencil_enable ? _effect_stencil.get() : nullptr);
 
 		if (pass_info.stencil_enable && viewport.Width == _width && viewport.Height == _height && !is_effect_stencil_cleared)
 		{
@@ -954,7 +960,7 @@ bool reshade::d3d9::runtime_d3d9::init_imgui_resources()
 		_device->SetSamplerState(0, D3DSAMP_MAXMIPLEVEL, 0);
 		_device->SetSamplerState(0, D3DSAMP_SRGBTEXTURE, 0);
 
-		hr = _device->EndStateBlock(&_imgui_state);
+		hr = _device->EndStateBlock(&_imgui.state);
 	}
 
 	if (FAILED(hr))
@@ -977,25 +983,25 @@ void reshade::d3d9::runtime_d3d9::render_imgui_draw_data(ImDrawData *draw_data)
 	};
 
 	// Create and grow vertex/index buffers if needed
-	if (_imgui_index_buffer_size < draw_data->TotalIdxCount)
+	if (_imgui.num_indices < draw_data->TotalIdxCount)
 	{
-		_imgui_index_buffer.reset();
-		_imgui_index_buffer_size = draw_data->TotalIdxCount + 10000;
+		_imgui.indices.reset();
+		_imgui.num_indices = draw_data->TotalIdxCount + 10000;
 
-		if (FAILED(_device->CreateIndexBuffer(_imgui_index_buffer_size * sizeof(ImDrawIdx), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, sizeof(ImDrawIdx) == 2 ? D3DFMT_INDEX16 : D3DFMT_INDEX32, D3DPOOL_DEFAULT, &_imgui_index_buffer, nullptr)))
+		if (FAILED(_device->CreateIndexBuffer(_imgui.num_indices * sizeof(ImDrawIdx), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, sizeof(ImDrawIdx) == 2 ? D3DFMT_INDEX16 : D3DFMT_INDEX32, D3DPOOL_DEFAULT, &_imgui.indices, nullptr)))
 			return;
 	}
-	if (_imgui_vertex_buffer_size < draw_data->TotalVtxCount)
+	if (_imgui.num_vertices < draw_data->TotalVtxCount)
 	{
-		_imgui_vertex_buffer.reset();
-		_imgui_vertex_buffer_size = draw_data->TotalVtxCount + 5000;
+		_imgui.vertices.reset();
+		_imgui.num_vertices = draw_data->TotalVtxCount + 5000;
 
-		if (FAILED(_device->CreateVertexBuffer(_imgui_vertex_buffer_size * sizeof(ImDrawVert9), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1, D3DPOOL_DEFAULT, &_imgui_vertex_buffer, nullptr)))
+		if (FAILED(_device->CreateVertexBuffer(_imgui.num_vertices * sizeof(ImDrawVert9), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1, D3DPOOL_DEFAULT, &_imgui.vertices, nullptr)))
 			return;
 	}
 
 	if (ImDrawIdx *idx_dst;
-		SUCCEEDED(_imgui_index_buffer->Lock(0, draw_data->TotalIdxCount * sizeof(ImDrawIdx), reinterpret_cast<void **>(&idx_dst), D3DLOCK_DISCARD)))
+		SUCCEEDED(_imgui.indices->Lock(0, draw_data->TotalIdxCount * sizeof(ImDrawIdx), reinterpret_cast<void **>(&idx_dst), D3DLOCK_DISCARD)))
 	{
 		for (int n = 0; n < draw_data->CmdListsCount; ++n)
 		{
@@ -1004,10 +1010,10 @@ void reshade::d3d9::runtime_d3d9::render_imgui_draw_data(ImDrawData *draw_data)
 			idx_dst += draw_list->IdxBuffer.size();
 		}
 
-		_imgui_index_buffer->Unlock();
+		_imgui.indices->Unlock();
 	}
 	if (ImDrawVert9 *vtx_dst;
-		SUCCEEDED(_imgui_vertex_buffer->Lock(0, draw_data->TotalVtxCount * sizeof(ImDrawVert9), reinterpret_cast<void **>(&vtx_dst), D3DLOCK_DISCARD)))
+		SUCCEEDED(_imgui.vertices->Lock(0, draw_data->TotalVtxCount * sizeof(ImDrawVert9), reinterpret_cast<void **>(&vtx_dst), D3DLOCK_DISCARD)))
 	{
 		for (int n = 0; n < draw_data->CmdListsCount; ++n)
 		{
@@ -1029,16 +1035,18 @@ void reshade::d3d9::runtime_d3d9::render_imgui_draw_data(ImDrawData *draw_data)
 			}
 		}
 
-		_imgui_vertex_buffer->Unlock();
+		_imgui.vertices->Unlock();
 	}
 
 	// Setup render state: fixed-pipeline, alpha-blending, no face culling, no depth testing
-	_imgui_state->Apply();
-	_device->SetIndices(_imgui_index_buffer.get());
-	_device->SetStreamSource(0, _imgui_vertex_buffer.get(), 0, sizeof(ImDrawVert9));
+	_imgui.state->Apply();
+	_device->SetIndices(_imgui.indices.get());
+	_device->SetStreamSource(0, _imgui.vertices.get(), 0, sizeof(ImDrawVert9));
+	_device->SetRenderTarget(0, _backbuffer_resolved.get());
+
+	// Clear unused bindings
 	for (unsigned int i = 0; i < _num_samplers; i++)
 		_device->SetTexture(i, nullptr);
-	_device->SetRenderTarget(0, _backbuffer_resolved.get());
 	for (unsigned int i = 1; i < _num_simultaneous_rendertargets; i++)
 		_device->SetRenderTarget(i, nullptr);
 	_device->SetDepthStencilSurface(nullptr);
@@ -1092,7 +1100,7 @@ void reshade::d3d9::runtime_d3d9::render_imgui_draw_data(ImDrawData *draw_data)
 #endif
 
 #if RESHADE_DEPTH
-void reshade::d3d9::runtime_d3d9::draw_depth_debug_menu()
+void reshade::d3d9::runtime_d3d9::draw_depth_debug_menu(buffer_detection &tracker)
 {
 	if (_has_high_network_activity)
 	{
@@ -1102,22 +1110,22 @@ void reshade::d3d9::runtime_d3d9::draw_depth_debug_menu()
 
 	if (ImGui::CollapsingHeader("Depth Buffers", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		assert(!_reset_tracker && _current_tracker != nullptr);
+		assert(!_reset_buffer_detection);
 
 		// Do NOT reset tracker within state block capture scope, since it may otherwise bind the replacement depth-stencil after it has been destroyed here
-		_reset_tracker |= ImGui::Checkbox("Disable replacement with INTZ format", &_disable_intz);
+		_reset_buffer_detection |= ImGui::Checkbox("Disable replacement with INTZ format", &_disable_intz);
 
-		_reset_tracker |= ImGui::Checkbox("Use aspect ratio heuristics", &_filter_aspect_ratio);
-		_reset_tracker |= ImGui::Checkbox("Copy depth buffers before clear operation", &_preserve_depth_buffers);
+		_reset_buffer_detection |= ImGui::Checkbox("Use aspect ratio heuristics", &_filter_aspect_ratio);
+		_reset_buffer_detection |= ImGui::Checkbox("Copy depth buffers before clear operation", &_preserve_depth_buffers);
 
 		ImGui::Spacing();
 		ImGui::Separator();
 		ImGui::Spacing();
 
-		for (const auto &[ds_surface, snapshot] : _current_tracker->depth_buffer_counters())
+		for (const auto &[ds_surface, snapshot] : tracker.depth_buffer_counters())
 		{
 			char label[512] = "";
-			sprintf_s(label, "%s0x%p", (ds_surface == _current_tracker->current_depth_surface() ? "> " : "  "), ds_surface.get());
+			sprintf_s(label, "%s0x%p", (ds_surface == tracker.current_depth_surface() ? "> " : "  "), ds_surface.get());
 
 			D3DSURFACE_DESC desc;
 			ds_surface->GetDesc(&desc);
@@ -1129,30 +1137,30 @@ void reshade::d3d9::runtime_d3d9::draw_depth_debug_menu()
 				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
 			}
 
-			if (bool value = (_depthstencil_override == ds_surface);
+			if (bool value = (_depth_surface_override == ds_surface);
 				ImGui::Checkbox(label, &value))
-				_depthstencil_override = value ? ds_surface.get() : nullptr;
+				_depth_surface_override = value ? ds_surface.get() : nullptr;
 
 			ImGui::SameLine();
 			ImGui::Text("| %4ux%-4u | %5u draw calls ==> %8u vertices |%s",
 				desc.Width, desc.Height, snapshot.stats.drawcalls, snapshot.stats.vertices, (msaa ? " MSAA" : ""));
 
-			if (_preserve_depth_buffers && ds_surface == _current_tracker->current_depth_surface())
+			if (_preserve_depth_buffers && ds_surface == tracker.current_depth_surface())
 			{
 				for (UINT clear_index = 1; clear_index <= snapshot.clears.size(); ++clear_index)
 				{
-					sprintf_s(label, "%s  CLEAR %2u", (clear_index == _current_tracker->current_clear_index() ? "> " : "  "), clear_index);
+					sprintf_s(label, "%s  CLEAR %2u", (clear_index == tracker.current_clear_index() ? "> " : "  "), clear_index);
 
 					if (bool value = (_depth_clear_index_override == clear_index);
 						ImGui::Checkbox(label, &value))
 					{
 						_depth_clear_index_override = value ? clear_index : std::numeric_limits<UINT>::max();
-						_reset_tracker = true;
+						_reset_buffer_detection = true;
 					}
 
 					ImGui::SameLine();
 					ImGui::Text("%*s|           | %5u draw calls ==> %8u vertices |",
-						sizeof(ds_surface) - 4, "", // Add space to fill pointer length
+						sizeof(ds_surface.get()) == 8 ? 8 : 0, "", // Add space to fill pointer length
 						snapshot.clears[clear_index - 1].drawcalls, snapshot.clears[clear_index - 1].vertices);
 				}
 			}
@@ -1168,30 +1176,31 @@ void reshade::d3d9::runtime_d3d9::draw_depth_debug_menu()
 		ImGui::Separator();
 		ImGui::Spacing();
 
-		if (_reset_tracker)
+		if (_reset_buffer_detection)
 			runtime::save_config();
 	}
 }
 
-void reshade::d3d9::runtime_d3d9::update_depthstencil_texture(com_ptr<IDirect3DSurface9> depthstencil)
+void reshade::d3d9::runtime_d3d9::update_depth_texture_bindings(com_ptr<IDirect3DSurface9> surface)
 {
-	if (depthstencil == _depthstencil)
+	if (surface == _depth_surface)
 		return;
 
-	_depthstencil = std::move(depthstencil);
-	_depthstencil_texture.reset();
+	_depth_texture.reset();
+	_depth_surface = std::move(surface);
 	_has_depth_texture = false;
 
-	if (_depthstencil != nullptr)
+	if (_depth_surface != nullptr)
 	{
-		if (HRESULT hr = _depthstencil->GetContainer(IID_PPV_ARGS(&_depthstencil_texture)); FAILED(hr))
+		if (HRESULT hr = _depth_surface->GetContainer(IID_PPV_ARGS(&_depth_texture)); FAILED(hr))
 		{
 			LOG(ERROR) << "Failed to retrieve texture from depth surface! HRESULT is " << hr << '.';
-			return;
+		}
+		else
+		{
+			_has_depth_texture = true;
 		}
 	}
-
-	_has_depth_texture = true;
 
 	// Update all references to the new texture
 	for (const auto &tex : _textures)
@@ -1211,11 +1220,11 @@ void reshade::d3d9::runtime_d3d9::update_depthstencil_texture(com_ptr<IDirect3DS
 			for (d3d9_pass_data &pass_data : tech_impl->passes)
 				for (IDirect3DTexture9 *&sampler_tex : pass_data.sampler_textures)
 					if (tex_impl->texture == sampler_tex)
-						sampler_tex = _depthstencil_texture.get();
+						sampler_tex = _depth_texture.get();
 		}
 
-		tex_impl->surface = _depthstencil;
-		tex_impl->texture = _depthstencil_texture;
+		tex_impl->texture = _depth_texture;
+		tex_impl->surface = _depth_surface;
 	}
 }
 #endif

@@ -9,9 +9,6 @@
 #include "state_block.hpp"
 #include "buffer_detection.hpp"
 
-namespace reshade { enum class texture_reference; }
-namespace reshadefx { struct sampler_info; }
-
 namespace reshade::d3d10
 {
 	class runtime_d3d10 : public runtime
@@ -22,9 +19,11 @@ namespace reshade::d3d10
 
 		bool on_init(const DXGI_SWAP_CHAIN_DESC &desc);
 		void on_reset();
-		void on_present(buffer_detection &tracker);
+		void on_present();
 
 		bool capture_screenshot(uint8_t *buffer) const override;
+
+		buffer_detection *_buffer_detection = nullptr;
 
 	private:
 		bool init_effect(size_t index) override;
@@ -47,8 +46,6 @@ namespace reshade::d3d10
 		com_ptr<ID3D10RenderTargetView> _backbuffer_rtv[3];
 		com_ptr<ID3D10Texture2D> _backbuffer_texture;
 		com_ptr<ID3D10ShaderResourceView> _backbuffer_texture_srv[2];
-		com_ptr<ID3D10Texture2D> _depth_texture;
-		com_ptr<ID3D10ShaderResourceView> _depth_texture_srv;
 
 		com_ptr<ID3D10PixelShader> _copy_pixel_shader;
 		com_ptr<ID3D10VertexShader> _copy_vertex_shader;
@@ -56,37 +53,43 @@ namespace reshade::d3d10
 
 		HMODULE _d3d_compiler = nullptr;
 		com_ptr<ID3D10RasterizerState> _effect_rasterizer;
-		com_ptr<ID3D10DepthStencilView> _effect_depthstencil;
-		std::vector<struct d3d10_effect_data> _effect_data;
 		std::unordered_map<size_t, com_ptr<ID3D10SamplerState>> _effect_sampler_states;
+		com_ptr<ID3D10DepthStencilView> _effect_stencil;
+		std::vector<struct d3d10_effect_data> _effect_data;
 
 #if RESHADE_GUI
 		bool init_imgui_resources();
 		void render_imgui_draw_data(ImDrawData *data) override;
 
-		int _imgui_index_buffer_size = 0;
-		com_ptr<ID3D10Buffer> _imgui_index_buffer;
-		int _imgui_vertex_buffer_size = 0;
-		com_ptr<ID3D10Buffer> _imgui_vertex_buffer;
-		com_ptr<ID3D10VertexShader> _imgui_vertex_shader;
-		com_ptr<ID3D10PixelShader> _imgui_pixel_shader;
-		com_ptr<ID3D10InputLayout> _imgui_input_layout;
-		com_ptr<ID3D10Buffer> _imgui_constant_buffer;
-		com_ptr<ID3D10SamplerState> _imgui_texture_sampler;
-		com_ptr<ID3D10RasterizerState> _imgui_rasterizer_state;
-		com_ptr<ID3D10BlendState> _imgui_blend_state;
-		com_ptr<ID3D10DepthStencilState> _imgui_depthstencil_state;
+		struct imgui_resources
+		{
+			com_ptr<ID3D10Buffer> cb;
+			com_ptr<ID3D10VertexShader> vs;
+			com_ptr<ID3D10RasterizerState> rs;
+			com_ptr<ID3D10PixelShader> ps;
+			com_ptr<ID3D10SamplerState> ss;
+			com_ptr<ID3D10BlendState> bs;
+			com_ptr<ID3D10DepthStencilState> ds;
+			com_ptr<ID3D10InputLayout> layout;
+
+			com_ptr<ID3D10Buffer> indices;
+			com_ptr<ID3D10Buffer> vertices;
+			int num_indices = 0;
+			int num_vertices = 0;
+		} _imgui;
 #endif
 
 #if RESHADE_DEPTH
-		void draw_depth_debug_menu();
-		void update_depthstencil_texture(com_ptr<ID3D10Texture2D> texture);
+		void draw_depth_debug_menu(buffer_detection &tracker);
+		void update_depth_texture_bindings(com_ptr<ID3D10Texture2D> texture);
+
+		com_ptr<ID3D10Texture2D> _depth_texture;
+		com_ptr<ID3D10ShaderResourceView> _depth_texture_srv;
 
 		bool _filter_aspect_ratio = true;
 		bool _preserve_depth_buffers = false;
 		UINT _depth_clear_index_override = std::numeric_limits<UINT>::max();
 		ID3D10Texture2D *_depth_texture_override = nullptr;
-		buffer_detection *_current_tracker = nullptr;
 #endif
 	};
 }

@@ -9,9 +9,6 @@
 #include "state_block.hpp"
 #include "buffer_detection.hpp"
 
-namespace reshade { enum class texture_reference; }
-namespace reshadefx { struct sampler_info; }
-
 namespace reshade::d3d9
 {
 	class runtime_d3d9 : public runtime
@@ -22,9 +19,11 @@ namespace reshade::d3d9
 
 		bool on_init(const D3DPRESENT_PARAMETERS &pp);
 		void on_reset();
-		void on_present(buffer_detection &tracker);
+		void on_present();
 
 		bool capture_screenshot(uint8_t *buffer) const override;
+
+		buffer_detection *_buffer_detection = nullptr;
 
 	private:
 		bool init_effect(size_t index) override;
@@ -51,11 +50,9 @@ namespace reshade::d3d9
 		com_ptr<IDirect3DSurface9> _backbuffer_resolved;
 		com_ptr<IDirect3DTexture9> _backbuffer_texture;
 		com_ptr<IDirect3DSurface9> _backbuffer_texture_surface;
-		com_ptr<IDirect3DSurface9> _depthstencil;
-		com_ptr<IDirect3DTexture9> _depthstencil_texture;
 
 		HMODULE _d3d_compiler = nullptr;
-		com_ptr<IDirect3DSurface9> _effect_depthstencil;
+		com_ptr<IDirect3DSurface9> _effect_stencil;
 		com_ptr<IDirect3DVertexBuffer9> _effect_vertex_buffer;
 		com_ptr<IDirect3DVertexDeclaration9> _effect_vertex_layout;
 
@@ -63,24 +60,30 @@ namespace reshade::d3d9
 		bool init_imgui_resources();
 		void render_imgui_draw_data(ImDrawData *data) override;
 
-		com_ptr<IDirect3DStateBlock9> _imgui_state;
-		com_ptr<IDirect3DIndexBuffer9> _imgui_index_buffer;
-		com_ptr<IDirect3DVertexBuffer9> _imgui_vertex_buffer;
-		int _imgui_index_buffer_size = 0;
-		int _imgui_vertex_buffer_size = 0;
+		struct imgui_resources
+		{
+			com_ptr<IDirect3DStateBlock9> state;
+
+			com_ptr<IDirect3DIndexBuffer9> indices;
+			com_ptr<IDirect3DVertexBuffer9> vertices;
+			int num_indices = 0;
+			int num_vertices = 0;
+		} _imgui;
 #endif
 
 #if RESHADE_DEPTH
-		void draw_depth_debug_menu();
-		void update_depthstencil_texture(com_ptr<IDirect3DSurface9> depthstencil);
+		void draw_depth_debug_menu(buffer_detection &tracker);
+		void update_depth_texture_bindings(com_ptr<IDirect3DSurface9> surface);
+
+		com_ptr<IDirect3DTexture9> _depth_texture;
+		com_ptr<IDirect3DSurface9> _depth_surface;
 
 		bool _disable_intz = false;
-		bool _reset_tracker = false;
+		bool _reset_buffer_detection = false;
 		bool _filter_aspect_ratio = true;
 		bool _preserve_depth_buffers = false;
 		UINT _depth_clear_index_override = std::numeric_limits<UINT>::max();
-		IDirect3DSurface9 *_depthstencil_override = nullptr;
-		buffer_detection *_current_tracker = nullptr;
+		IDirect3DSurface9 *_depth_surface_override = nullptr;
 #endif
 	};
 }
