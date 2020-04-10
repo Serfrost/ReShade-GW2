@@ -1,81 +1,160 @@
-﻿/*
+﻿/**
  * Copyright (C) 2014 Patrick Mours. All rights reserved.
  * License: https://github.com/crosire/reshade#license
  */
 
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Net;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Navigation;
+using System.Windows.Media;
 
 namespace ReShade.Setup
 {
-	public class EffectPackage : INotifyPropertyChanged
+	public class EffectItem : INotifyPropertyChanged
 	{
-		public bool Enabled { get; set; }
-		public string PackageName { get; set; }
-		public string PackageDescription { get; set; }
-		public string InstallPath { get; set; }
-		public string TextureInstallPath { get; set; }
-		public string DownloadUrl { get; set; }
-		public string RepositoryUrl { get; set; }
+		bool enabled = true;
+		internal EffectRepositoryItem Parent = null;
+		public event PropertyChangedEventHandler PropertyChanged;
+
+		public bool? Enabled
+		{
+			get
+			{
+				return enabled;
+			}
+			set
+			{
+				enabled = value ?? false;
+				NotifyPropertyChanged();
+				Parent.NotifyPropertyChanged();
+			}
+		}
+
+		public string Name { get; set; }
+		public string Path { get; set; }
+
+		internal void NotifyPropertyChanged()
+		{
+			PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Enabled)));
+		}
+	}
+
+	public class EffectRepositoryItem : INotifyPropertyChanged
+	{
+		public EffectRepositoryItem(string name)
+		{
+			Name = name;
+
+			// Add support for TLS 1.2, so that HTTPS connection to GitHub succeeds
+			ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+
+			var request = WebRequest.Create("https://api.github.com/repos/" + name + "/contents/Shaders") as HttpWebRequest;
+			request.Accept = "application/json";
+			request.UserAgent = "reshade";
+			request.AutomaticDecompression = DecompressionMethods.GZip;
+
+			using (var response = request.GetResponse() as HttpWebResponse)
+			using (Stream stream = response.GetResponseStream())
+			using (StreamReader reader = new StreamReader(stream))
+			{
+				string json = reader.ReadToEnd();
+
+				foreach (Match match in new Regex("\"name\":\"(.*?)\",").Matches(json))
+				{
+					string filename = match.Groups[1].Value;
+
+					if (Path.GetExtension(filename) == ".fx")
+					{
+						Effects.Add(new EffectItem
+						{
+							Name = match.Groups[1].Value,
+							Path = name + "/Shaders/" + filename,
+							Parent = this
+						});
+					}
+				}
+			}
+		}
 
 		public event PropertyChangedEventHandler PropertyChanged;
-		internal void NotifyPropertyChanged(string propertyName)
+
+		public bool? Enabled
 		{
-			PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+			get
+			{
+				int count = Effects.Where(x => x.Enabled.Value).Count();
+				return count == Effects.Count ? true : count == 0 ? false : (bool?)null;
+			}
+			set
+			{
+				foreach (var item in Effects)
+				{
+					item.Enabled = value ?? false;
+				}
+			}
+		}
+
+		public string Name { get; set; }
+		public ObservableCollection<EffectItem> Effects { get; set; } = new ObservableCollection<EffectItem>();
+
+		internal void NotifyPropertyChanged()
+		{
+			PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Enabled)));
 		}
 	}
 
 	public partial class SelectEffectsDialog : Window
 	{
-		public SelectEffectsDialog(Utilities.IniFile packagesIni)
+		public SelectEffectsDialog()
 		{
 			InitializeComponent();
-			DataContext = this;
 
-			foreach (var package in packagesIni.GetSections())
+			try
 			{
-				Packages.Add(new EffectPackage
+				var configFile = new Utilities.IniFile("ReShade Setup.ini");
+
+				if (configFile.GetValue(string.Empty, "Repositories", out string[] repositories))
 				{
-					Enabled = packagesIni.GetString(package, "Enabled") == "1",
-					PackageName = packagesIni.GetString(package, "PackageName"),
-					PackageDescription = packagesIni.GetString(package, "PackageDescription"),
-					InstallPath = packagesIni.GetString(package, "InstallPath"),
-					TextureInstallPath = packagesIni.GetString(package, "TextureInstallPath"),
-					DownloadUrl = packagesIni.GetString(package, "DownloadUrl"),
-					RepositoryUrl = packagesIni.GetString(package, "RepositoryUrl")
-				});
+					foreach (string repository in repositories)
+					{
+						Repositories.Add(new EffectRepositoryItem(repository));
+					}
+				}
+				else
+				{
+					// Add default repository
+					Repositories.Add(new EffectRepositoryItem("crosire/reshade-shaders"));
+				}
 			}
+			catch { }
+
+			EffectList.ItemsSource = Repositories;
 		}
 
-		public IEnumerable<EffectPackage> EnabledPackages => Packages.Where(x => x.Enabled);
-		public ObservableCollection<EffectPackage> Packages { get; } = new ObservableCollection<EffectPackage>();
+		ObservableCollection<EffectRepositoryItem> Repositories = new ObservableCollection<EffectRepositoryItem>();
 
 		void OnCheck(object sender, RoutedEventArgs e)
 		{
-			if (Packages.Count == 0)
+			if (EffectList.Items.Count == 0)
 			{
 				return;
 			}
 
-			if (sender is Button button)
+			var button = sender as Button;
+			bool check = (string)button.Content == "Check _all";
+			button.Content = check ? "Uncheck _all" : "Check _all";
+
+			foreach (EffectRepositoryItem repository in Repositories)
 			{
-				const string CHECK_LABEL = "Check _all";
-				const string UNCHECK_LABEL = "Uncheck _all";
-
-				bool check = button.Content as string == CHECK_LABEL;
-				button.Content = check ? UNCHECK_LABEL : CHECK_LABEL;
-
-				foreach (var package in Packages)
+				foreach (EffectItem item in repository.Effects)
 				{
-					package.Enabled = check;
-					package.NotifyPropertyChanged(nameof(package.Enabled));
+					item.Enabled = check;
 				}
 			}
 		}
@@ -88,6 +167,50 @@ namespace ReShade.Setup
 		void OnConfirm(object sender, RoutedEventArgs e)
 		{
 			DialogResult = true;
+		}
+
+		void OnAddRepository(object sender, RoutedEventArgs e)
+		{
+			if (CustomRepositoryName.Text.IndexOf('/') < 0)
+			{
+				CustomRepositoryName.Foreground = Brushes.Red;
+				return;
+			}
+
+			string name = CustomRepositoryName.Text;
+
+			if (name.StartsWith("https://github.com/"))
+			{
+				// Remove URL prefix if it exists
+				name = name.Remove(0, 19);
+			}
+
+			// Check if this repository was already added
+			if (Repositories.Where(x => x.Name == name).Count() == 0)
+			{
+				EffectRepositoryItem repository = null;
+				try
+				{
+					repository = new EffectRepositoryItem(name);
+				}
+				catch
+				{
+					// Invalid repository name
+					CustomRepositoryName.Foreground = Brushes.Red;
+					return;
+				}
+
+				Repositories.Add(repository);
+
+				// Add repository to configuration file, so that it is remembered for the next time
+				var configFile = new Utilities.IniFile("ReShade Setup.ini");
+
+				configFile.SetValue(string.Empty, "Repositories", Repositories.Select(x => x.Name).ToArray());
+				configFile.Save();
+			}
+
+			CustomRepositoryName.Text = string.Empty;
+			CustomRepositoryName.Foreground = Brushes.Black;
 		}
 
 		void OnCheckBoxMouseEnter(object sender, MouseEventArgs e)
@@ -104,19 +227,6 @@ namespace ReShade.Setup
 			{
 				checkbox.IsChecked = !checkbox.IsChecked;
 				checkbox.ReleaseMouseCapture();
-			}
-		}
-
-		void OnHyperlinkRequestNavigate(object sender, RequestNavigateEventArgs e)
-		{
-			try
-			{
-				Process.Start(e.Uri.AbsoluteUri);
-				e.Handled = true;
-			}
-			catch
-			{
-				e.Handled = false;
 			}
 		}
 	}

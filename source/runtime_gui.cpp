@@ -513,7 +513,8 @@ void reshade::runtime::draw_ui()
 		}
 		else
 		{
-			ImGui::TextUnformatted("ReShade " VERSION_STRING_FILE " by crosire");
+			ImGui::Separator(); ImGui::NewLine();
+			ImGui::TextUnformatted( COMMIT ); ImGui::NewLine();
 
 			if (_needs_update)
 			{
@@ -523,7 +524,8 @@ void reshade::runtime::draw_ui()
 			}
 			else
 			{
-				ImGui::TextUnformatted("Visit https://reshade.me for news, updates, shaders and discussion.");
+				ImGui::TextUnformatted("Visit https://discord.gg/huJXkr2 & https://reshade.me for news, updates, shaders and discussion."); ImGui::NewLine();
+				ImGui::Separator();
 			}
 
 			ImGui::Spacing();
@@ -1566,12 +1568,22 @@ void reshade::runtime::draw_ui_log()
 
 void reshade::runtime::draw_ui_about()
 {
-	ImGui::TextUnformatted("ReShade " VERSION_STRING_FILE);
+	ImGui::NewLine();
+	ImGui::Separator();
+	ImGui::NewLine();
+	ImGui::TextUnformatted( COMMIT ); ImGui::NewLine();
+	ImGui::TextUnformatted( COMMIT2 ); ImGui::NewLine();
+	ImGui::NewLine();
+	ImGui::TextUnformatted("Guild Wars 2 Development Community: https://discord.gg/huJXkr2"); ImGui::NewLine();
+	ImGui::TextUnformatted("This Mod's Github Page: https://github.com/Serfrost/ReShade-GW2"); ImGui::NewLine();
+	ImGui::Separator();
+	ImGui::NewLine();
 
 	ImGui::PushTextWrapPos();
 	ImGui::TextUnformatted(R"(Copyright (C) 2014 Patrick Mours. All rights reserved.
 
 https://github.com/crosire/reshade
+https://github.com/Serfrost/ReShade-GW2
 
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
 

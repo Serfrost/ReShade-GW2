@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 
-namespace ReShade.Setup.Utilities
+namespace ReShade.Utilities
 {
 	public class FileOpenDialog
 	{

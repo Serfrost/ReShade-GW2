@@ -21,6 +21,28 @@
 #include <stb_image_write.h>
 #include <stb_image_resize.h>
 
+#include "d3d12/runtime_d3d12.hpp"
+#include "d3d12/buffer_detection.hpp"
+
+#include "custom.h"
+
+bool _preset_0_active;
+bool _preset_1_active;
+bool _preset_2_active;
+bool _preset_3_active;
+bool _preset_4_active;
+
+bool _log_verified;
+
+unsigned int _vertice_limit = 650000;
+unsigned int _drawcall_limit = 650000;
+
+bool _startup_reload = true;
+bool _auto_reload;
+
+bool _auto_reload_vertices;
+bool _auto_reload_drawcalls;
+
 extern volatile long g_network_traffic;
 extern std::filesystem::path g_reshade_dll_path;
 extern std::filesystem::path g_target_executable_path;
@@ -116,7 +138,7 @@ reshade::runtime::runtime() :
 		// If neither exist create a "ReShade.ini" in the ReShade DLL directory
 		_configuration_path = g_reshade_dll_path.parent_path() / L"ReShade.ini";
 
-	_needs_update = check_for_update(_latest_version);
+
 
 #if RESHADE_GUI
 	init_ui();
@@ -242,22 +264,165 @@ void reshade::runtime::on_present()
 	if (!ini_file::flush_cache())
 		_preset_save_success = false;
 
-	// Detect high network traffic
-	static int cooldown = 0, traffic = 0;
-	if (cooldown-- > 0)
+	if (_reset_vertices == true)
 	{
-		traffic += g_network_traffic > 0;
-	}
-	else
-	{
-		_has_high_network_activity = traffic > 10;
-		traffic = 0;
-		cooldown = 60;
+		if (_enable_vertices == false)
+		{
+			_vertice_limit = 650000;
+
+			if (_preset == 3)
+			{
+				LOG(WARN) << "runtime.cpp - 'Custom' Vertice Limit was reset to 650,000 as Vertices were disabled.";
+			}
+		}
+		else if (_reset_drawcalls == true)
+
+			if (_enable_drawcalls == false)
+			{
+				_drawcall_limit = 650000;
+
+				if (_preset == 3)
+				{
+					LOG(WARN) << "runtime.cpp - 'Custom' Drawcall Limit was reset to 650,000 as Drawcalls were disabled.";
+				}
+			}
 	}
 
-	// Reset frame statistics
-	g_network_traffic = 0;
-	_drawcalls = _vertices = 0;
+	if (_preset == 0 && _preset_0_active == false)
+	{
+		LOG(WARN) << "runtime.cpp - Preset 0 'Disabled' was set, Vertice and Drawcall Limits will reset to Max.";
+		_preset_0_active = true;
+		_preset_1_active = false;
+		_preset_2_active = false;
+		_preset_3_active = false;
+		_preset_4_active = false;
+		_vertice_limit = 1500000;
+		_drawcall_limit = 1500000;
+		LOG(WARN) << "runtime.cpp - Limit reset was successful.";
+	}
+
+	if (_preset == 1 && _preset_1_active == false)
+	{
+		LOG(WARN) << "runtime.cpp - Preset 1 'Guild Wars 2' was set, the Vertice Limit will reset to 650,000.";
+		_preset_0_active = false;
+		_preset_1_active = true;
+		_preset_2_active = false;
+		_preset_3_active = false;
+		_preset_4_active = false;
+		_vertice_limit = 650000;
+		_drawcall_limit = 1;
+		_verified = false;
+		_log_verified = true;
+		LOG(WARN) << "runtime.cpp - Limit reset was successful.";
+	}
+	else if (_preset == 1 && _preset_1_active == true)
+	{
+		if (_verified == true)
+		{
+			_vertice_limit = 5000;
+
+			if (_log_verified == true)
+			{
+				_log_verified = false;
+				LOG(WARN) << "runtime.cpp - Buffer was verified, limit set to 5000.";
+			}
+		}
+	}
+	else if (_preset == 2 && _preset_2_active == false)
+	{
+		LOG(WARN) << "runtime.cpp - Preset 2 'Blade&Soul' was set, Vertice & Drawcall Limits will reset to Max.";
+		_preset_0_active = false;
+		_preset_1_active = false;
+		_preset_2_active = true;
+		_preset_3_active = false;
+		_preset_4_active = false;
+		_vertice_limit = 1500000;
+		_drawcall_limit = 1500000;
+		LOG(WARN) << "runtime.cpp - Limit reset was successful.";
+	}
+	else if (_preset == 3 && _preset_3_active == false)
+	{
+		LOG(WARN) << "runtime.cpp - Preset 3 'Custom' was set, Vertice & Drawcall Limits will reset to 750,000.";
+		_preset_0_active = false;
+		_preset_1_active = false;
+		_preset_2_active = false;
+		_preset_3_active = true;
+		_preset_4_active = false;
+		_vertice_limit = 750000;
+		_drawcall_limit = 750000;
+		LOG(WARN) << "runtime.cpp - Limit reset was successful.";
+	}
+	else if (_preset == 4 && _preset_4_active == false)
+	{
+		LOG(WARN) << "runtime.cpp - Preset 4 'Debug' was set, Vertice & Drawcall Limits will reset to 1.";
+		_preset_0_active = false;
+		_preset_1_active = false;
+		_preset_2_active = false;
+		_preset_3_active = false;
+		_preset_4_active = true;
+		_vertice_limit = 1;
+		_drawcall_limit = 1;
+		LOG(WARN) << "runtime.cpp - Limit reset was successful.";
+	}
+
+	if (_preset == 3 && _auto_reload_vertices == false)
+	{
+		if (_vertice_count == 0)
+		{
+			LOG(WARN) << "runtime.cpp - Effect reload scheduled as Vertices have reached 0.";
+			_auto_reload_vertices = true;
+		}
+	}
+	else if (_preset == 3 && _auto_reload_drawcalls == false)
+	{
+		if (_drawcall_count == 0)
+		{
+			LOG(WARN) << "runtime.cpp - Effect reload scheduled as Drawcalls have reached 0.";
+			_auto_reload_drawcalls = true;
+		}
+	}
+	else if (_preset == 3 && _auto_reload_vertices == true)
+	{
+		if (_vertice_count >= _vertice_limit)
+		{
+			LOG(WARN) << "runtime.cpp - Vertice threshold requirement met, beginning scheduled effect reload.";
+			_auto_reload_vertices = false;
+			_auto_reload = true;
+			runtime::load_effects();
+			_auto_reload = false;
+			LOG(WARN) << "runtime.cpp - The scheduled effect reload was successful.";
+		}
+	}
+	else if (_preset == 3 && _auto_reload_drawcalls == true)
+	{
+		if (_drawcall_count >= _drawcall_limit)
+		{
+			LOG(WARN) << "runtime.cpp - Drawcall threshold requirement met, beginning scheduled effect reload.";
+			_auto_reload_drawcalls = false;
+			_auto_reload = true;
+			runtime::load_effects();
+			_auto_reload = false;
+			LOG(WARN) << "runtime.cpp - The scheduled effect reload was successful.";
+		}
+	}
+
+
+	//  Detect high network traffic
+	static int cooldown = 0, traffic = 0;
+	//	if (cooldown-- > 0)
+	//	{
+	//		traffic += g_network_traffic > 0;
+	//	}
+	//	else
+	//	{
+	//		_has_high_network_activity = traffic > 10;
+	//		traffic = 0;
+	//		cooldown = 60;
+	//	}
+	//
+	//	// Reset frame statistics
+	//	g_network_traffic = 0;
+	//	_drawcalls = _vertices = 0;
 }
 
 bool reshade::runtime::load_effect(const std::filesystem::path &path, size_t index)
@@ -565,8 +730,27 @@ void reshade::runtime::load_effects()
 	// Clear out any previous effects
 	unload_effects();
 
-#if RESHADE_GUI
-	_show_splash = true; // Always show splash bar when reloading everything
+#if RESHADE_GUI   // Only show splash with reload hotkey.
+
+	if (_startup_reload == true)
+	{
+		_show_splash = false;
+		_startup_reload = false;
+
+		LOG(WARN) << "Splash bar hidden due to a Auto Reload flag.";
+	}
+	else if (_auto_reload == true)
+	{
+		_show_splash = false;
+		LOG(WARN) << "Splash bar hidden due to a Auto Reload flag.";
+	}
+	else if (_manual_reload == true)
+	{
+		_show_splash = false;
+		LOG(WARN) << "Splash bar hidden due to a Manual Reload flag.";
+	}
+	else _show_splash = true;
+
 #endif
 	_last_reload_successful = true;
 
@@ -731,7 +915,14 @@ void reshade::runtime::unload_effects()
 void reshade::runtime::update_and_render_effects()
 {
 	// Delay first load to the first render call to avoid loading while the application is still initializing
-	if (_framecount == 0 && !_no_reload_on_init)
+
+	if (_startup_delay_log == true)
+	{
+		LOG(WARN) << "Initialization paused due to set Startup Delay frame requirement.";
+		_startup_delay_log = false;
+	}
+
+	if (_framecount == _startupdelay && !_no_reload_on_init)
 		load_effects();
 
 	if (_reload_remaining_effects == 0)

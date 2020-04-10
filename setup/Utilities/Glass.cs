@@ -5,9 +5,9 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
-namespace ReShade.Setup.Utilities
+namespace ReShade.Utilities
 {
-	public static class AeroGlass
+	public static class Glass
 	{
 		[StructLayout(LayoutKind.Sequential)]
 		private struct MARGINS

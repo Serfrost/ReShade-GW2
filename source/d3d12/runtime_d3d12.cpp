@@ -14,8 +14,48 @@
 #include <imgui_internal.h>
 #include <d3dcompiler.h>
 
+#include "version.h"
+#include "custom.h"
+
+#include "runtime.hpp"
+
 #define D3D12_RESOURCE_STATE_SHADER_RESOURCE \
 	(D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+
+bool _startup_delay_log;
+
+bool _reset_values;
+bool _reset_vertices;
+bool _reset_drawcalls;
+
+bool _manual_reload;
+
+bool _enable_startup_delay = true;
+int _startupdelay = 500;
+
+bool _show_presets;
+int _preset = 0;
+
+bool _enable_priority;
+int _priority = 0;
+
+bool _enable_vertices;
+bool _enable_drawcalls;
+
+unsigned int vertMin = 1;
+unsigned int vertMax = 1500000;
+
+unsigned int drawMin = 1;
+unsigned int drawMax = 1500000;
+
+bool _reminder1;
+bool _reminder2;
+bool _reminder3;
+bool _reminder4;
+bool _reminder5;
+bool _reminder6;
+bool _reminder7;
+bool _reminder8;
 
 namespace reshade::d3d12
 {
@@ -98,19 +138,77 @@ reshade::d3d12::runtime_d3d12::runtime_d3d12(ID3D12Device *device, ID3D12Command
 	});
 #endif
 #if RESHADE_DEPTH
-	subscribe_to_load_config([this](const ini_file &config) {
-		config.get("DX12_BUFFER_DETECTION", "DepthBufferRetrievalMode", _preserve_depth_buffers);
-		config.get("DX12_BUFFER_DETECTION", "DepthBufferClearingNumber", _depth_clear_index_override);
-		config.get("DX12_BUFFER_DETECTION", "UseAspectRatioHeuristics", _filter_aspect_ratio);
+	subscribe_to_load_config([this](const ini_file& config) {
 
+		config.get("#Reminder:", "1a. If you have problems, delete this configuration file and start over.", _reminder1);
+		config.get("#Reminder:", "1b. Many variations can result in crashing due to how automatic buffer selection works.", _reminder2);
+		config.get("#Reminder:", "1c. If you do not use any effects that use the buffers, you may use the Disabled option to prevent all crashes due to bad buffers.", _reminder3);
+		config.get("#Reminder:", "1d. -------------------------------------------------------------------------------------------------------------------------------", _reminder4);
+		config.get("#Reminder:", "1e. Setting the Startup Delay too low while using D912Pxy will likely immediately crash because of loading PSO Cache.", _reminder5);
+		config.get("#Reminder:", "1f. Setting the Vertice or Drawcall Limit too low may cause it to switch to a bad buffer and crash unless you set Priority.", _reminder6);
+		config.get("#Reminder:", "1g. Vertices seem to be better to use than Drawcalls, but games can vary. Test for yourself.", _reminder7);
+
+		config.get("DX12_BUFFER_DETECTION", "1a. Enable or Disable Startup Delay for D912Pxy usage.", _enable_startup_delay);
+		config.get("DX12_BUFFER_DETECTION", "1b. Startup Delay for ReShade (Default is 500 Frames)", _startupdelay);
+
+		config.get("DX12_BUFFER_DETECTION", "2a. Show Presets", _show_presets);
+		config.get("DX12_BUFFER_DETECTION", "2b. Disabled (0) - GW2 Preset (1) - B&S Preset (2) - Custom Preset (3) - Debug (4)", _preset);
+
+		config.get("DX12_BUFFER_DETECTION", "3a. (Custom Preset) Enable or Disable Vertices for Buffer Detection", _enable_vertices);
+		config.get("DX12_BUFFER_DETECTION", "3b. (Custom Preset) Enable or Disable Drawcalls for Buffer Detection", _enable_drawcalls);
+
+		config.get("DX12_BUFFER_DETECTION", "4a. (Custom Preset) Enable Priority Selection if both Vertices and Drawcalls are Enabled", _enable_priority);
+		config.get("DX12_BUFFER_DETECTION", "4b. (Custom Preset) Prioritize Vertices or Drawcalls", _priority); /// Disabled=0, Vertices=1, Drawcalls=2
+
+		config.get("DX12_BUFFER_DETECTION", "5a. (Custom Preset) Lowest Limit for Vertices to be Recognized", _vertice_limit);
+		config.get("DX12_BUFFER_DETECTION", "5b. (Custom Preset) Lowest Limit for Drawcalls to be Recognized", _drawcall_limit);
+
+		config.get("DX12_BUFFER_DETECTION", "6a. Use Aspect Ratio Heuristics", _filter_aspect_ratio);
+		config.get("DX12_BUFFER_DETECTION", "6b. (Auto) Copy Depth Buffer", _preserve_depth_buffers);
+		config.get("DX12_BUFFER_DETECTION", "6c. (Auto) Copy Depth Buffer Clearing Number", _depth_clear_index_override);
+
+		if (_enable_startup_delay == true)
+		{
+			_startup_delay_log = true;
+		}
+		if (_preserve_depth_buffers != 0)
+		{
+			_preserve_depth_buffers = 0;
+		}
 		if (_depth_clear_index_override == 0)
-			// Zero is not a valid clear index, since it disables depth buffer preservation
+		{	// Zero is not a valid clear index, since it disables depth buffer preservation
 			_depth_clear_index_override = std::numeric_limits<UINT>::max();
-	});
+		}
+});
 	subscribe_to_save_config([this](ini_file &config) {
-		config.set("DX12_BUFFER_DETECTION", "DepthBufferRetrievalMode", _preserve_depth_buffers);
-		config.set("DX12_BUFFER_DETECTION", "DepthBufferClearingNumber", _depth_clear_index_override);
-		config.set("DX12_BUFFER_DETECTION", "UseAspectRatioHeuristics", _filter_aspect_ratio);
+
+		config.set("#Reminder:", "1a. If you have problems, delete this configuration file and start over.", _reminder1);
+		config.set("#Reminder:", "1b. Many variations can result in crashing due to how automatic buffer selection works.", _reminder2);
+		config.set("#Reminder:", "1c. If you do not use any effects that use the buffers, you may use the Disabled option to prevent all crashes due to bad buffers.", _reminder3);
+		config.set("#Reminder:", "1d. -------------------------------------------------------------------------------------------------------------------------------", _reminder4);
+		config.set("#Reminder:", "1e. Setting the Startup Delay too low while using D912Pxy will likely immediately crash because of loading PSO Cache.", _reminder5);
+		config.set("#Reminder:", "1f. Setting the Vertice or Drawcall Limit too low may cause it to switch to a bad buffer and crash unless you set Priority.", _reminder6);
+		config.set("#Reminder:", "1g. Vertices seem to be better to use than Drawcalls, but games can vary. Test for yourself.", _reminder7);
+
+		config.set("DX12_BUFFER_DETECTION", "1a. Enable or Disable Startup Delay for D912Pxy usage.", _enable_startup_delay);
+		config.set("DX12_BUFFER_DETECTION", "1b. Startup Delay for ReShade (Default is 500 Frames)", _startupdelay);
+
+		config.set("DX12_BUFFER_DETECTION", "2a. Show Presets", _show_presets);
+		config.set("DX12_BUFFER_DETECTION", "2b. Disabled (0) - GW2 Preset (1) - B&S Preset (2) - Custom Preset (3) - Debug (4)", _preset);
+
+		config.set("DX12_BUFFER_DETECTION", "3a. (Custom Preset) Enable or Disable Vertices for Buffer Detection", _enable_vertices);
+		config.set("DX12_BUFFER_DETECTION", "3b. (Custom Preset) Enable or Disable Drawcalls for Buffer Detection", _enable_drawcalls);
+
+		config.set("DX12_BUFFER_DETECTION", "4a. (Custom Preset) Enable Priority Selection if both Vertices and Drawcalls are Enabled", _enable_priority);
+		config.set("DX12_BUFFER_DETECTION", "4b. (Custom Preset) Prioritize Vertices or Drawcalls", _priority); /// Disabled=0, Vertices=1, Drawcalls=2
+
+		config.set("DX12_BUFFER_DETECTION", "5a. (Custom Preset) Lowest Limit for Vertices to be Recognized", _vertice_limit);
+		config.set("DX12_BUFFER_DETECTION", "5b. (Custom Preset) Lowest Limit for Drawcalls to be Recognized", _drawcall_limit);
+
+		config.set("DX12_BUFFER_DETECTION", "6a. Use Aspect Ratio Heuristics", _filter_aspect_ratio);
+		config.set("DX12_BUFFER_DETECTION", "6b. (Auto) Copy Depth Buffer", _preserve_depth_buffers);
+		config.set("DX12_BUFFER_DETECTION", "6c. (Auto) Copy Depth Buffer Clearing Number", _depth_clear_index_override);
+
 	});
 #endif
 }
@@ -1583,85 +1681,353 @@ void reshade::d3d12::runtime_d3d12::render_imgui_draw_data(ImDrawData *draw_data
 #endif
 
 #if RESHADE_DEPTH
-void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu(buffer_detection_context &tracker)
+void reshade::d3d12::runtime_d3d12::draw_depth_debug_menu(buffer_detection_context& tracker)
 {
-	if (!ImGui::CollapsingHeader("Depth Buffers", ImGuiTreeNodeFlags_DefaultOpen))
-		return;
-
-	if (_has_high_network_activity)
+	if (ImGui::CollapsingHeader("Depth Buffers", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		ImGui::TextColored(ImColor(204, 204, 0), "High network activity discovered.\nAccess to depth buffers is disabled to prevent exploitation.");
-		return;
-	}
+		bool save = false;
+		bool modified = false;
+		bool _set_SaveAndReload = false;
 
-	bool modified = false;
-	modified |= ImGui::Checkbox("Use aspect ratio heuristics", &_filter_aspect_ratio);
-	modified |= ImGui::Checkbox("Copy depth buffers before clear operation", &_preserve_depth_buffers);
+		ImGui::NewLine();
+		save |= ImGui::Checkbox("Enable Startup Delay for usage with D912Pxy", &_enable_startup_delay);		//Enables or disables Startup Delay, mainly for switching between D912Pxy & Without.
+		ImGui::NewLine();
 
-	if (modified) // Detection settings have changed, reset heuristic
-		// Do not release resources here, as they may still be in use on the device
-		tracker.reset(false);
-
-	ImGui::Spacing();
-	ImGui::Separator();
-	ImGui::Spacing();
-
-	for (const auto &[dsv_texture, snapshot] : tracker.depth_buffer_counters())
-	{
-		// TODO: Display current resource when not preserving depth buffers
-		char label[512] = "";
-		sprintf_s(label, "%s0x%p", (dsv_texture == tracker.current_depth_texture() ? "> " : "  "), dsv_texture.get());
-
-		const D3D12_RESOURCE_DESC desc = dsv_texture->GetDesc();
-
-		const bool msaa = desc.SampleDesc.Count > 1;
-		if (msaa) // Disable widget for MSAA textures
+		if (_enable_startup_delay == true)
 		{
-			ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+			ImGui::TextUnformatted("Startup Delay by Frames - Too low may cause crashing");
+			ImGui::NewLine();
+			save |= ImGui::SliderInt("(Default 500)", &_startupdelay, 1, 1000);						//Slider for ReShade Startup Delay by Frames
+			ImGui::NewLine();
 		}
 
-		if (bool value = (_depth_texture_override == dsv_texture);
-			ImGui::Checkbox(label, &value))
-			_depth_texture_override = value ? dsv_texture.get() : nullptr;
+		modified |= ImGui::Checkbox("Use Aspect Ratio Heuristics", &_filter_aspect_ratio);			//Toggles Aspect Ratio Heuristic Detection for Buffer Selection
+		ImGui::NewLine();
 
-		ImGui::SameLine();
-		ImGui::Text("| %4ux%-4u | %5u draw calls ==> %8u vertices |%s",
-			desc.Width, desc.Height, snapshot.total_stats.drawcalls, snapshot.total_stats.vertices, (msaa ? " MSAA" : ""));
+		if (modified) // Detection settings have changed, reset heuristic
+			// Do not release resources here, as they may still be in use on the device
+			tracker.reset(false);
 
-		if (_preserve_depth_buffers && dsv_texture == tracker.current_depth_texture())
+		save |= ImGui::Checkbox("Show Presets", &_show_presets);									//Shows or Hides Preset Selections
+		ImGui::NewLine();
+
+		if (_show_presets == true)
 		{
-			for (UINT clear_index = 1; clear_index <= snapshot.clears.size(); ++clear_index)
+			ImGui::Separator();
+			ImGui::NewLine();
+			_set_SaveAndReload |= ImGui::RadioButton("Disabled", &_preset, 0); ImGui::NewLine();		//Resets & Disables all Buffers, prevents crashing from erroneous autoselect.
+			_set_SaveAndReload |= ImGui::RadioButton("Guild Wars 2", &_preset, 1); ImGui::NewLine();	//Guild Wars 2 default settings.
+			_set_SaveAndReload |= ImGui::RadioButton("Blade&Soul", &_preset, 2); ImGui::NewLine();		//Blade&Soul default settings. (Disabled)
+			_set_SaveAndReload |= ImGui::RadioButton("Debug", &_preset, 4); ImGui::NewLine();			//Doesn't apply buffers.
+			_set_SaveAndReload |= ImGui::RadioButton("Use Custom Settings", &_preset, 3);				//Enables Custom Config settings.
+			ImGui::NewLine();
+			ImGui::Separator();
+			ImGui::NewLine();
+		}
+
+		if (_preset == 3)		// Custom Configuration
+		{
+			_reset_drawcalls = false;
+			_reset_vertices = false;
+
+			if (_reset_values == true)
 			{
-				sprintf_s(label, "%s  CLEAR %2u", (clear_index == tracker.current_clear_index() ? "> " : "  "), clear_index);
+				_priority = 0;
+				_enable_priority = false;
+				_enable_vertices = false;
+				_enable_drawcalls = false;
+				_reset_vertices = true;
+				_reset_drawcalls = true;
+				_reset_values = false;
+				LOG(WARN) << "runtime_d3d12.cpp - 'Custom' values reset due to the reset flag being active.";
+			}
 
-				if (bool value = (_depth_clear_index_override == clear_index);
-					ImGui::Checkbox(label, &value))
+			if (_set_SaveAndReload == true)
+			{
+				LOG(WARN) << "runtime_d3d12.cpp - Config saved and effects reloaded due to Preset switch.";
+				_set_SaveAndReload = false;
+				runtime::save_config();
+				_manual_reload = true;
+				runtime::load_effects();
+				_manual_reload = false;
+			}
+
+			save |= ImGui::Checkbox("Use Vertices in Buffer Selection", &_enable_vertices); ImGui::NewLine();	//Allows Vertices to be above 0 so Buffers will see them.
+			save |= ImGui::Checkbox("Use Drawcalls in Buffer Selection", &_enable_drawcalls);					//Allows Drawcalls to be above 0 so Buffers will see them.
+			ImGui::NewLine();
+			ImGui::Separator();
+			ImGui::NewLine();
+
+			if (_enable_vertices == true && _enable_drawcalls == true)
+			{
+
+				ImGui::TextUnformatted("Lowest Amount to be Recognized:"); ImGui::NewLine();
+				save |= ImGui::SliderScalar("- Vertices", ImGuiDataType_U32, &_vertice_limit, &vertMin, &vertMax);		//Vertice Slider in UINT, min & max at the top of this .CPP
+				ImGui::NewLine();
+				ImGui::Separator();
+				ImGui::NewLine();
+				save |= ImGui::SliderScalar("- Drawcalls", ImGuiDataType_U32, &_drawcall_limit, &drawMin, &drawMax);	//Drawcall Slider in UINT, min & max at the top of this .CPP
+				ImGui::NewLine();
+				save |= ImGui::Checkbox("Enable Priority Selection", &_enable_priority);								//Sets & opens the Priority Selection
+				ImGui::NewLine();
+				ImGui::Separator();
+				ImGui::NewLine();
+
+				if (_enable_priority == true)
 				{
-					_depth_clear_index_override = value ? clear_index : std::numeric_limits<UINT>::max();
-					modified = true;
+					save |= ImGui::RadioButton("Prioritize Vertices", &_priority, 1); ImGui::NewLine();					//Prioritizes Vertices.
+					save |= ImGui::RadioButton("Prioritize Drawcalls", &_priority, 2); ImGui::NewLine();				//Prioritizes Drawcalls.
+					ImGui::TextUnformatted("* Info: Will ignore the alternative."); ImGui::NewLine();
+					ImGui::Separator();
+					ImGui::NewLine();
 				}
+				else if (_enable_priority == false)																	//If Priority is not set to be Enabled...
+				{
+					_priority = 0;																				//Resets Priority status.
+				}
+			}
+			else if (_enable_vertices == true && _enable_drawcalls == false)
+			{
+				_reset_drawcalls = true;
 
+				ImGui::TextUnformatted("Lowest Amount to be Recognized:"); ImGui::NewLine();
+				save |= ImGui::SliderScalar("- Vertices", ImGuiDataType_U32, &_vertice_limit, &vertMin, &vertMax);		//Vertice Slider in UINT, min & max at the top of this .CPP
+				ImGui::NewLine();
+				ImGui::Separator();
+			}
+			else if (_enable_drawcalls == true && _enable_vertices == false)
+			{
+				_reset_vertices = true;
+
+				ImGui::TextUnformatted("Lowest to be Recognized:"); ImGui::NewLine();
+				save |= ImGui::SliderScalar("- Drawcalls", ImGuiDataType_U32, &_drawcall_limit, &drawMin, &drawMax);	//Drawcall Slider in UINT, min & max at the top of this .CPP
+				ImGui::NewLine();
+				ImGui::Separator();
+			}
+
+		}
+
+		if (_preset == 0) //Disabled Values	
+		{
+			if (_set_SaveAndReload == true)
+			{
+				LOG(WARN) << "runtime_d3d12.cpp - Config saved and effects reloaded due to Preset switch.";
+
+				runtime::save_config();
+				_manual_reload = true;
+				runtime::load_effects();
+				_manual_reload = false;
+
+				_set_SaveAndReload = false;
+			}
+
+			_reset_values = true;
+
+			_enable_vertices = false;				//Default - Vertices disabled.
+			_enable_drawcalls = false;				//Default - Drawcalls disabled.
+
+			_enable_priority = false;				//Default - Priority set to unused.
+			_priority = 0;							//Default - Priority status set to disabled.
+		}
+
+		if (_preset == 1) //Guild Wars 2 Defaults
+		{
+			if (_set_SaveAndReload == true)
+			{
+				//LOG(WARN) << "runtime_d3d12.cpp - Config saved and effects reloaded due to Preset switch.";
+				_set_SaveAndReload = false;
+				runtime::save_config();
+				_manual_reload = true;
+				runtime::load_effects();
+				_manual_reload = false;
+			}
+
+			_reset_values = true;
+
+			_enable_vertices = true;				//Allows vertices for logic.
+			_enable_drawcalls = false;				//Disables drawcalls for logic.
+
+			_enable_priority = false;				//Enables priority
+			_priority = 0;							//Prioritizes Vertices
+		}
+
+		if (_preset == 2) //Blade&Soul Defaults
+		{
+			if (_set_SaveAndReload == true)
+			{
+				LOG(WARN) << "runtime_d3d12.cpp - Config saved and effects reloaded due to Preset switch.";
+				_set_SaveAndReload = false;
+				runtime::save_config();
+				_manual_reload = true;
+				runtime::load_effects();
+				_manual_reload = false;
+			}
+
+			_reset_values = true;
+
+			_enable_vertices = false;				//Enables vertices
+			_enable_drawcalls = false;				//Disables drawcalls
+
+			_enable_priority = false;				//Priority enabled
+			_priority = 0;							//Priority to vertices
+		}
+
+		if (_preset == 4) //Debug
+		{
+			if (_set_SaveAndReload == true)
+			{
+				LOG(WARN) << "runtime_d3d12.cpp - Config saved and effects reloaded due to Preset switch.";
+				_set_SaveAndReload = false;
+				runtime::save_config();
+				_manual_reload = true;
+				runtime::load_effects();
+				_manual_reload = false;
+			}
+
+			_reset_values = true;
+
+			_enable_vertices = true;				//Enables vertices
+			_enable_drawcalls = true;				//Disables drawcalls
+
+			_enable_priority = false;				//Priority enabled
+			_priority = 0;							//Priority to vertices
+		}
+
+		ImGui::NewLine();
+		ImGui::Spacing();
+		ImGui::Separator();
+		ImGui::Spacing();
+
+		for (const auto& [dsv_texture, snapshot] : tracker.depth_buffer_counters())
+		{
+			// TODO: Display current resource when not preserving depth buffers
+			char label[512] = "";
+			sprintf_s(label, "%s0x%p", (dsv_texture == tracker.current_depth_texture() ? "> " : "  "), dsv_texture.get());
+
+			const D3D12_RESOURCE_DESC desc = dsv_texture->GetDesc();
+
+			const bool msaa = desc.SampleDesc.Count > 1;
+			if (msaa) // Disable widget for MSAA textures
+			{
+				ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+			}
+
+			bool _depth_override = false;
+			bool _override_has_been_used = false;
+
+			if (bool value = (_depth_texture_override == dsv_texture);
+				ImGui::Checkbox(label, &value))
+				_depth_texture_override = value ? dsv_texture.get() : nullptr;
+
+			if (_override_has_been_used == false && _depth_override == true)
+			{
+				LOG(WARN) << "runtime_d3d12.cpp - A buffer override has been enabled.";
+
+				_manual_reload = true;
+				runtime::load_effects();
+				_manual_reload = false;
+				_override_has_been_used = true;
+			}
+
+			if (_override_has_been_used == true && _depth_override == false)
+			{
+				LOG(WARN) << "runtime_d3d12.cpp - The buffer override has been disabled.";
+				_override_has_been_used = false;
+			}
+
+			if (_preset == 0)
+			{
 				ImGui::SameLine();
-				ImGui::Text("%*s|           | %5u draw calls ==> %8u vertices |",
-					sizeof(dsv_texture.get()) == 8 ? 8 : 0, "", // Add space to fill pointer length
-					snapshot.clears[clear_index - 1].drawcalls, snapshot.clears[clear_index - 1].vertices);
+				ImGui::Text("| [Drawcalls Disabled]  &  [Vertices Disabled] |");
+			}
+			else if (_preset == 1)
+			{
+				ImGui::SameLine();
+				ImGui::Text("| %8u (Vertices) <==  ~ %5u [Drawcalls Ignored] |",
+					snapshot.total_stats.vertices, snapshot.total_stats.drawcalls);
+			}
+			else if (_preset == 4)
+			{
+				ImGui::SameLine();
+				ImGui::Text("| %5u Drawcalls  <Debug>  %8u Vertices |",
+					snapshot.total_stats.drawcalls, snapshot.total_stats.vertices);
+			}
+			else if (_enable_vertices == false && _enable_drawcalls == false)
+			{
+				ImGui::SameLine();
+				ImGui::Text("| [Drawcalls Disabled]  &  [Vertices Disabled] |",
+					snapshot.total_stats.drawcalls, snapshot.total_stats.vertices);
+			}
+			else if (_enable_vertices == true && _enable_drawcalls == true && _enable_priority == true && _priority == 1)
+			{
+				ImGui::SameLine();
+				ImGui::Text("| %8u (Vertices) <==  ~  [Drawcalls Ignored] |",
+					snapshot.total_stats.vertices, snapshot.total_stats.drawcalls);
+			}
+			else if (_enable_vertices == true && _enable_drawcalls == true && _enable_priority == true && _priority == 2)
+			{
+				ImGui::SameLine();
+				ImGui::Text("| %5u (Drawcalls) <==  ~  [Vertices Ignored] |",
+					snapshot.total_stats.drawcalls, snapshot.total_stats.vertices);
+			}
+			else if (_enable_vertices == true && _enable_drawcalls == true)
+			{
+				ImGui::SameLine();
+				ImGui::Text("| %5u Drawcalls  <~?~>  %8u Vertices |",
+					snapshot.total_stats.drawcalls, snapshot.total_stats.vertices);
+			}
+			else if (_enable_vertices == true && _enable_drawcalls == false)
+			{
+				ImGui::SameLine();
+				ImGui::Text("| %8u Vertices |",
+					snapshot.total_stats.vertices);
+			}
+			else if (_enable_drawcalls == true && _enable_vertices == false)
+			{
+				ImGui::SameLine();
+				ImGui::Text("| %5u Drawcalls |",
+					snapshot.total_stats.drawcalls);
+			}
+
+			if (_preserve_depth_buffers && dsv_texture == tracker.current_depth_texture())
+			{
+				for (UINT clear_index = 1; clear_index <= snapshot.clears.size(); ++clear_index)
+				{
+					sprintf_s(label, "%s  CLEAR %2u", (clear_index == tracker.current_clear_index() ? "> " : "  "), clear_index);
+
+					if (bool value = (_depth_clear_index_override == clear_index);
+						ImGui::Checkbox(label, &value))
+					{
+						_depth_clear_index_override = value ? clear_index : std::numeric_limits<UINT>::max();
+						modified = true;
+					}
+
+					ImGui::SameLine();
+					ImGui::Text("%*s|           | %5u draw calls ==> %8u vertices |",
+						sizeof(dsv_texture.get()) == 8 ? 8 : 0, "", // Add space to fill pointer length
+						snapshot.clears[clear_index - 1].drawcalls, snapshot.clears[clear_index - 1].vertices);
+				}
+			}
+
+			if (msaa)
+			{
+				ImGui::PopStyleColor();
+				ImGui::PopItemFlag();
 			}
 		}
 
-		if (msaa)
-		{
-			ImGui::PopStyleColor();
-			ImGui::PopItemFlag();
-		}
+		ImGui::Spacing();
+		ImGui::Separator();
+		ImGui::Spacing();
+
+		if (modified)
+			runtime::save_config();
+
+		if (save)
+			runtime::save_config();
 	}
 
-	ImGui::Spacing();
-	ImGui::Separator();
-	ImGui::Spacing();
-
-	if (modified)
-		runtime::save_config();
 }
 
 void reshade::d3d12::runtime_d3d12::update_depth_texture_bindings(com_ptr<ID3D12Resource> depth_texture)
@@ -1704,7 +2070,7 @@ void reshade::d3d12::runtime_d3d12::update_depth_texture_bindings(com_ptr<ID3D12
 	// Descriptors may be currently in use, so make sure all previous frames have finished before updating them
 	wait_for_command_queue();
 
-	for (d3d12_effect_data &effect_data : _effect_data)
+	for (d3d12_effect_data& effect_data : _effect_data)
 	{
 		if (effect_data.depth_texture_binding.ptr == 0)
 			continue; // Skip effects that do not have a depth buffer binding
