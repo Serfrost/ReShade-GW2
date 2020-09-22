@@ -1,20 +1,20 @@
 (Original Message about my Fork, now Discontinued) - The modifications in this fork are meant to supplement D912Pxy's PSO Cache loading to help prevent games from crashing immediately, allowing both ReShade and Depth Buffer support on different D3D9 => DX12 Titles. Updates may be few and far inbetween, but the initial release should allow for most issues to be avoided by using Custom Configurations if the situation arises.
 
+
+
 **#####################################################################**
 
 **This fork is now discontinued, you should now use Gshade - See below:**
 
 **#####################################################################**
 
-Gshade is a fork of ReShade, I'm not a developer for Gshade. 
-This respository now serves little purpose.
+***If you need help with Gshade and Guild Wars 2 / D912Pxy, please see the 
+
+***bottom of this ReadMe for links to the Guild Wars 2 Development Discord.***
 
 **#####################################################################**
 
-***If you need help with Gshade and Guild Wars 2 / D912Pxy, please see 
-the bottom of this ReadMe for links to the Guild Wars 2 Development Discord.***
 
-**#####################################################################**
 
 ***Gshade:*** https://gposers.com/gshade/
 
@@ -26,11 +26,15 @@ the bottom of this ReadMe for links to the Guild Wars 2 Development Discord.***
 
 **(3.)** After you run through the prompts, go to your Guild Wars 2 folder. 
 
+
+
 **#####################################################################**
 
 **If you use UOAOM (Addon Manager) skip 4 and 5. They are for using only Gshade and D912pxy together without other addons.**
 
-**#**
+**#####################################################################**
+
+
 
 **(4.)** Everything that Gshade created in your Guild Wars 2 directory must be moved to...
 
