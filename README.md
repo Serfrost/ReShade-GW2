@@ -6,11 +6,13 @@
 
 **=====================================================================**
 
-Gshade is a fork of ReShade, I'm not a developer for Gshade. This respository now serves little purpose.
+Gshade is a fork of ReShade, I'm not a developer for Gshade. 
+This respository now serves little purpose.
 
 **#####################################################################**
 
-***If you need help with Gshade and Guild Wars 2 / D912Pxy, please see the bottom of this ReadMe for links to the Guild Wars 2 Development Discord.***
+***If you need help with Gshade and Guild Wars 2 / D912Pxy, please see 
+the bottom of this ReadMe for links to the Guild Wars 2 Development Discord.***
 
 **#####################################################################**
 
