@@ -62,7 +62,7 @@ https://ci.appveyor.com/project/megai2/d912pxy/build/artifacts
 
 *Secondly, try to avoid changing your Shaders and Environment settings within Guild Wars 2 as it will overly bloat your shaderCache/PSOCache for D912Pxy as it is a separate set of shaders for everything in the game.  These new shaders will have to be loaded on new restarts even if you do not use the same setting you were at the beginning.*
 
-*Lastly, if you encounter any problems, see if renaming your d912pxy\pck\latest.pck resolves the issue.  After some D912Pxy updates, this file may have to be removed, thus restarting your shaderCache / PSOCache from scratch.*
+*Lastly, if you encounter any problems, see if renaming your d912pxy\pck\latest.pck resolves the issue.  After some D912Pxy or Guild Wars 2 updates, this file may have to be removed, thus restarting your shaderCache / PSOCache from scratch.*
 
 
 
