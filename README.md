@@ -1,62 +1,80 @@
-The modifications in this fork are meant to supplement D912Pxy's PSO Cache loading to help prevent games from crashing immediately, allowing both ReShade and Depth Buffer support on different D3D9 => DX12 Titles. Updates may be few and far inbetween, but the initial release should allow for most issues to be avoided by using Custom Configurations if the situation arises.
+(Original Message about my Fork, now Discontinued) - The modifications in this fork are meant to supplement D912Pxy's PSO Cache loading to help prevent games from crashing immediately, allowing both ReShade and Depth Buffer support on different D3D9 => DX12 Titles. Updates may be few and far inbetween, but the initial release should allow for most issues to be avoided by using Custom Configurations if the situation arises.
 
-===============================================================================
+**=====================================================================**
+**This fork is now discontinued, you should now use Gshade - See below:**
+**=====================================================================**
 
-Guild Wars 2 Development Community - https://discord.gg/huJXkr2
+Gshade is a fork of ReShade, I'm not a developer for Gshade. This respository now serves little purpose.
 
-megai2's D912Pxy Repository - https://github.com/megai2/d912pxy
+**#####################################################################**
+***If you need help with Gshade and Guild Wars 2 / D912Pxy, please see the bottom of this ReadMe for links to the Guild Wars 2 Development Discord.***
+**#####################################################################**
 
-Original ReShade Repository by Crosire - https://github.com/crosire/reshade
+***Gshade:*** https://gposers.com/gshade/
 
-I personally recommend keeping an eye on Pascal's qUINT Repository - https://github.com/martymcmodding/qUINT
+***Instructions for [Guild Wars 2] Installation:***
 
-===============================================================================
+**(1.)** Run the Gshade installer and when it asks for the game executable, select your [Guild Wars 2] 32 or 64 .EXE
 
-Original ReadMe:
+**(2.)** When prompted, tell Gshade that Guild Wars 2 is for DX12; if you do not it will be named d3d9.dll instead of the required dxgi.dll - D912pxy must have the name d3d9.dll, not Gshade.
 
-ReShade
-=======
+**(3.)** After you run through the prompts, go to your Guild Wars 2 folder. 
 
-This is a generic post-processing injector for games and video software. It exposes an automated way to access both frame color and depth information and a custom shader language called ReShade FX to write effects like ambient occlusion, depth of field, color correction and more which work everywhere.
+**========================================================================================================================**
+**If you use UOAOM (Addon Manager) skip 4 and 5. They are for using only Gshade and D912pxy together without other addons.**
+**========================================================================================================================**
 
-The ReShade FX shader compiler contained in this repository is standalone, so can be integrated into other projects as well. Simply add all `source/effect_*.*` files to your project and use it similar to the [fxc example](tools/fxc.cpp).
+**(4.)** Everything that Gshade created in your Guild Wars 2 directory must be moved to...
 
-## Building
+64bit Users: bin64 folder.
+32bit Users:  bin folder
 
-You'll need Visual Studio 2017 or higher to build ReShade and Python for the `gl3w` dependency. The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home#windows) is required if building with Vulkan support.
+*Stuff to move if found:*
 
-1. Clone this repository including all Git submodules
-2. Open the Visual Studio solution
-3. Select either the "32-bit" or "64-bit" target platform and build the solution (this will build ReShade and all dependencies).
+  *- gshade-presets*
+  *- gshade-shaders*
+  *- dxgi.dll*
+  *- GShade.ini*
+  *- GShade.log*
+  *- GSInstLog.txt*
+  *- notification.wav*
 
-After the first build, a `version.h` file will show up in the [res](/res) directory. Change the `VERSION_FULL` definition inside to something matching the current release version and rebuild so that shaders from the official repository at https://github.com/crosire/reshade-shaders won't cause a version mismatch error during compilation.
+**(5.)** Ensure D912Pxy's d3d9.dll is in bin64 for 64bit Guild Wars 2 or otherwise bin  for 32bit.
 
-A quick overview of what some of the source code files contain:
+**6.** Within Guild Wars 2, open Gshade (Shift + F2) and proceed until you can open the Settings tab.  Set the Shader and Texture Search Paths correctly as the default is typically incorrect. Go back to Home and click Reload to have the available shaders be redetected.
 
-|File                                                      |Description                                                            |
-|----------------------------------------------------------|-----------------------------------------------------------------------|
-|[dll_log.cpp](source/dll_log.cpp)                         |Simple file logger implementation                                      |
-|[dll_main.cpp](source/dll_main.cpp)                       |Main entry point and test application when building for debug          |
-|[dll_resources.cpp](source/dll_resources.cpp)             |Access to DLL resource data (e.g. built-in shaders)                    |
-|[effect_lexer.cpp](source/effect_lexer.cpp)               |Lexical analyzer for C-like languages                                  |
-|[effect_parser.cpp](source/effect_parser.cpp)             |Parser for the ReShade FX shader language                              |
-|[effect_preprocessor.cpp](source/effect_preprocessor.cpp) |C-style preprocessor implementation                                    |
-|[hook.cpp](source/hook.cpp)                               |Wrapper around MinHook which tracks associated function pointers       |
-|[hook_manager.cpp](source/hook_manager.cpp)               |Automatic hook installation based on DLL exports                       |
-|[input.cpp](source/input.cpp)                             |Keyboard and mouse input management and window message queue hooks     |
-|[runtime.cpp](source/runtime.cpp)                         |Core ReShade runtime including effect and preset management            |
-|[runtime_gui.cpp](source/runtime_gui.cpp)                 |Overlay GUI and everything related to that                             |
-|[d3d9/runtime_d3d9.cpp](source/d3d9/runtime_d3d9.cpp)     |Effect runtime implementation for D3D9                                 |
-|[d3d10/runtime_d3d10.cpp](source/d3d10/runtime_d3d10.cpp) |Effect runtime implementation for D3D10                                |
-|[d3d11/runtime_d3d11.cpp](source/d3d11/runtime_d3d11.cpp) |Effect runtime implementation for D3D11                                |
-|[d3d12/runtime_d3d12.cpp](source/d3d12/runtime_d3d12.cpp) |Effect runtime implementation for D3D12                                |
-|[opengl/runtime_gl.cpp](source/opengl/runtime_gl.cpp)     |Effect runtime implementation for OpenGL                               |
-|[vulkan/runtime_vk.cpp](source/vulkan/runtime_vk.cpp)     |Effect runtime implementation for Vulkan                               |
+*Note: You can delete shaders you do not use to reduce clutter, do not delete ReShade.fxh or qUINT_common.fxh.*
 
-## Contributing
+*In the Gshade DX12 tab, do not enable Copy Depth Buffer Before Clear Operations as its current implementation will cause crashing.*
 
-Any contributions to the project are welcomed, it's recommended to use GitHub [pull requests](https://help.github.com/articles/using-pull-requests/).
+*Make sure you're running the latest recommended version of D912Pxy.*
 
-## License
+*Latest D912Pxy:*
+https://ci.appveyor.com/project/megai2/d912pxy/build/artifacts
 
-All source code in this repository is licensed under a [BSD 3-clause license](LICENSE.md).
+**Extra - D912pxy Reduced Graphical Pop-in:**
+
+**(7.)** If you want reduced graphical pop-in for game assets with D912pxy, browse to your D912pxy folder and open your config.ini - if this file does not exist, run the game client once and then close it.
+
+**(8.)** Locate the ...
+
+load_pso_cache=0
+save_pso_cache=0
+
+... values and change these both to 1.  This will allow you to save the shaderCache / PSOCache for the game assets after they have been converted to work with DX12.
+
+*D912pxy Note: Please keep in mind that the more cache you have built up, the longer it will take to boot the game as all assets have to be loaded before the client will open and fully load.  This can take awhile depending on your PC.  The same goes for closing the game, but only if you have encountered a lot of new shaders during your gameplay that time around.*
+
+*Secondly, try to avoid changing your Shaders and Environment settings within Guild Wars 2 as it will overly bloat your shaderCache/PSOCache for D912Pxy as it is a separate set of shaders for everything in the game.  These new shaders will have to be loaded on new restarts even if you do not use the same setting you were at the beginning.*
+
+*Lastly, if you encounter any problems, see if renaming your d912pxy\pck\latest.pck resolves the issue.  After some D912Pxy updates, this file may have to be removed, thus restarting your shaderCache / PSOCache from scratch.*
+
+**===============================================================================**
+
+**Guild Wars 2 Development Community - https://discord.gg/huJXkr2**
+
+**megai2's D912Pxy Repository - https://github.com/megai2/d912pxy**
+
+**Original ReShade Repository by Crosire - https://github.com/crosire/reshade**
+
+**===============================================================================**
