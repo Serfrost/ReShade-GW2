@@ -1,6 +1,6 @@
 (Original Message about my Fork, now Discontinued) - The modifications in this fork are meant to supplement D912Pxy's PSO Cache loading to help prevent games from crashing immediately, allowing both ReShade and Depth Buffer support on different D3D9 => DX12 Titles. Updates may be few and far inbetween, but the initial release should allow for most issues to be avoided by using Custom Configurations if the situation arises.
 
-
+-
 
 **#####################################################################**
 
@@ -8,13 +8,13 @@
 
 **#####################################################################**
 
-***If you need help with Gshade and Guild Wars 2 / D912Pxy, please see the 
+***If you need help with Gshade and Guild Wars 2 / D912Pxy, please see the ***
 
 ***bottom of this ReadMe for links to the Guild Wars 2 Development Discord.***
 
 **#####################################################################**
 
-
+-
 
 ***Gshade:*** https://gposers.com/gshade/
 
@@ -26,7 +26,7 @@
 
 **(3.)** After you run through the prompts, go to your Guild Wars 2 folder. 
 
-
+-
 
 **#####################################################################**
 
@@ -34,7 +34,7 @@
 
 **#####################################################################**
 
-
+-
 
 **(4.)** Everything that Gshade created in your Guild Wars 2 directory must be moved to...
 
@@ -80,6 +80,8 @@ save_pso_cache=0
 *Secondly, try to avoid changing your Shaders and Environment settings within Guild Wars 2 as it will overly bloat your shaderCache/PSOCache for D912Pxy as it is a separate set of shaders for everything in the game.  These new shaders will have to be loaded on new restarts even if you do not use the same setting you were at the beginning.*
 
 *Lastly, if you encounter any problems, see if renaming your d912pxy\pck\latest.pck resolves the issue.  After some D912Pxy updates, this file may have to be removed, thus restarting your shaderCache / PSOCache from scratch.*
+
+-
 
 **#####################################################################**
 
