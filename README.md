@@ -6,7 +6,7 @@
 
 **#####################################################################**
 
-***If you need help with Gshade and Guild Wars 2 / D912Pxy, please see the ***
+***If you need help with Gshade and Guild Wars 2 / D912Pxy, please see the***
 
 ***bottom of this ReadMe for links to the Guild Wars 2 Development Discord.***
 
