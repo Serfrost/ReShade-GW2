@@ -1,7 +1,5 @@
 (Original Message about my Fork, now Discontinued) - The modifications in this fork are meant to supplement D912Pxy's PSO Cache loading to help prevent games from crashing immediately, allowing both ReShade and Depth Buffer support on different D3D9 => DX12 Titles. Updates may be few and far inbetween, but the initial release should allow for most issues to be avoided by using Custom Configurations if the situation arises.
 
--
-
 **#####################################################################**
 
 **This fork is now discontinued, you should now use Gshade - See below:**
@@ -14,19 +12,15 @@
 
 **#####################################################################**
 
--
-
 ***Gshade:*** https://gposers.com/gshade/
 
 ***Instructions for [Guild Wars 2] Installation:***
 
-**(1.)** Run the Gshade installer and when it asks for the game executable, select your [Guild Wars 2] 32 or 64 .EXE
+- 1. Run the Gshade installer and when it asks for the game executable, select your [Guild Wars 2] 32 or 64 .EXE
 
-**(2.)** When prompted, tell Gshade that Guild Wars 2 is for DX12; if you do not it will be named d3d9.dll instead of the required dxgi.dll - D912pxy must have the name d3d9.dll, not Gshade.
+- 2. When prompted, tell Gshade that Guild Wars 2 is for DX12; if you do not it will be named d3d9.dll instead of the required dxgi.dll - D912pxy must have the name d3d9.dll, not Gshade.
 
-**(3.)** After you run through the prompts, go to your Guild Wars 2 folder. 
-
--
+- 3. After you run through the prompts, go to your Guild Wars 2 folder. 
 
 **#####################################################################**
 
@@ -34,9 +28,7 @@
 
 **#####################################################################**
 
--
-
-**(4.)** Everything that Gshade created in your Guild Wars 2 directory must be moved to...
+- 4. Everything that Gshade created in your Guild Wars 2 directory must be moved to...
 
 64bit Users: bin64 folder.
 32bit Users:  bin folder
@@ -51,9 +43,9 @@
   *- GSInstLog.txt*
   *- notification.wav*
 
-**(5.)** Ensure D912Pxy's d3d9.dll is in bin64 for 64bit Guild Wars 2 or otherwise bin  for 32bit.
+- 5. Ensure D912Pxy's d3d9.dll is in bin64 for 64bit Guild Wars 2 or otherwise bin  for 32bit.
 
-**6.** Within Guild Wars 2, open Gshade (Shift + F2) and proceed until you can open the Settings tab.  Set the Shader and Texture Search Paths correctly as the default is typically incorrect. Go back to Home and click Reload to have the available shaders be redetected.
+- 6. Within Guild Wars 2, open Gshade (Shift + F2) and proceed until you can open the Settings tab.  Set the Shader and Texture Search Paths correctly as the default is typically incorrect. Go back to Home and click Reload to have the available shaders be redetected.
 
 *Note: You can delete shaders you do not use to reduce clutter, do not delete ReShade.fxh or qUINT_common.fxh.*
 
@@ -66,9 +58,9 @@ https://ci.appveyor.com/project/megai2/d912pxy/build/artifacts
 
 **Extra - D912pxy Reduced Graphical Pop-in:**
 
-**(7.)** If you want reduced graphical pop-in for game assets with D912pxy, browse to your D912pxy folder and open your config.ini - if this file does not exist, run the game client once and then close it.
+- 7. If you want reduced graphical pop-in for game assets with D912pxy, browse to your D912pxy folder and open your config.ini - if this file does not exist, run the game client once and then close it.
 
-**(8.)** Locate the ...
+- 8. Locate the ...
 
 load_pso_cache=0
 save_pso_cache=0
@@ -81,7 +73,7 @@ save_pso_cache=0
 
 *Lastly, if you encounter any problems, see if renaming your d912pxy\pck\latest.pck resolves the issue.  After some D912Pxy updates, this file may have to be removed, thus restarting your shaderCache / PSOCache from scratch.*
 
--
+
 
 **#####################################################################**
 
