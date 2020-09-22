@@ -54,7 +54,7 @@ https://ci.appveyor.com/project/megai2/d912pxy/build/artifacts
 
 - (7.) If you want reduced graphical pop-in for game assets with D912pxy, browse to your D912pxy folder and open your config.ini - if this file does not exist, run the game client once and then close it.
 
-- (8.) Locate and change " *load_pso_cache=0* ,  *save_pso_cache=0* both to 1.
+- (8.) Locate and change " *load_pso_cache=0* ,  *save_pso_cache=0* " both to 1.
 
 - *This will allow you to save the shaderCache / PSOCache for the game assets after they have been converted to work with DX12.*
 
