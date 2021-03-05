@@ -68,7 +68,7 @@ https://ci.appveyor.com/project/megai2/d912pxy/build/artifacts
 
 **#####################################################################**
 
-**Guild Wars 2 Development Community - https://discord.gg/huJXkr2**
+**Guild Wars 2 Development Community - https://discord.gg/zqeHCEg**
 
 **megai2's D912Pxy Repository - https://github.com/megai2/d912pxy**
 
